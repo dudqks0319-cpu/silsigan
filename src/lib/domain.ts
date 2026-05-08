@@ -64,6 +64,8 @@ export type Place = {
   region: "ulsan" | "busan" | "gyeongju";
 };
 
+export type VerifiedRadiusM = 50 | 150 | 300;
+
 export type StoredReport = {
   id: string;
   placeId: string;
@@ -74,7 +76,7 @@ export type StoredReport = {
   weatherFeel: WeatherFeel;
   comment: string | null;
   photoUrl: string | null;
-  verifiedRadiusM: 50 | 150 | 300;
+  verifiedRadiusM: VerifiedRadiusM | null;
   createdAt: string;
   expiresAt: string;
   flagCount: number;
@@ -169,7 +171,7 @@ export function distanceMeters(
   return earthRadiusM * c;
 }
 
-export function verifiedRadiusFromDistance(distanceM: number): 50 | 150 | 300 | null {
+export function verifiedRadiusFromDistance(distanceM: number): VerifiedRadiusM | null {
   if (distanceM <= 50) {
     return 50;
   }

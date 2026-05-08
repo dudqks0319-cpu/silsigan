@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     });
 
     return ok(listPublicReports(filters), {
-      privacy: "정확한 내 위치는 보여주지 않고 현장 인증 범위만 표시합니다.",
+      privacy: "정확한 내 위치는 보여주지 않고 현장 인증 여부만 표시합니다.",
     });
   } catch (error) {
     return fail(error);

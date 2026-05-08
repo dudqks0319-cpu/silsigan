@@ -203,14 +203,17 @@ export function createReport(input: CreateReportInput, options: { actorId?: stri
       })
     : null;
 
-  const distanceM = distanceMeters(input.clientLocation, {
-    latitude: place.latitude,
-    longitude: place.longitude,
-  });
-  const verifiedRadiusM = verifiedRadiusFromDistance(distanceM);
+  const verifiedRadiusM = input.clientLocation
+    ? verifiedRadiusFromDistance(
+        distanceMeters(input.clientLocation, {
+          latitude: place.latitude,
+          longitude: place.longitude,
+        }),
+      )
+    : null;
 
-  if (!verifiedRadiusM) {
-    throw new ApiError(403, "LOCATION_NOT_VERIFIED", "장소 300m 이내에서만 위치 인증 제보를 등록할 수 있습니다.", {
+  if (input.clientLocation && !verifiedRadiusM) {
+    throw new ApiError(403, "LOCATION_NOT_VERIFIED", "현장 인증은 장소 300m 이내에서만 가능합니다.", {
       maxRadiusM: 300,
     });
   }
@@ -233,16 +236,19 @@ export function createReport(input: CreateReportInput, options: { actorId?: stri
     hiddenAt: null,
   };
 
+  const credits = creditEventsForReport(Boolean(verifiedRadiusM), Boolean(report.photoUrl));
   reports.unshift(report);
-  addCredits(options.actorId ?? "demo-user", creditEventsForReport(true, Boolean(report.photoUrl)));
+  addCredits(options.actorId ?? "demo-user", credits);
 
   return {
     report: maskReportForPublic(report),
-    credits: creditEventsForReport(true, Boolean(report.photoUrl)),
+    credits,
     balance: getCreditBalance(options.actorId ?? "demo-user"),
     ...(sanitizedPhoto ? { photo: sanitizedPhoto } : {}),
     safetyWarning: getCategorySafetyWarning(input.category),
-    privacyNotice: "정확한 위치는 현장 확인에만 쓰고 저장하지 않습니다.",
+    privacyNotice: verifiedRadiusM
+      ? "정확한 위치는 현장 확인에만 쓰고 저장하지 않습니다."
+      : "현장 인증 없이 등록되어 낮은 신뢰도로 표시됩니다.",
   };
 }
 

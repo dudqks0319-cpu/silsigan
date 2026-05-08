@@ -52,7 +52,7 @@ type PublicReport = {
   weatherFeel: WeatherFeel;
   comment: string | null;
   photoUrl: string | null;
-  verifiedRadiusM: 50 | 150 | 300;
+  verifiedRadiusM: 50 | 150 | 300 | null;
   createdAt: string;
   expiresAt: string;
   flagCount: number;
@@ -68,16 +68,11 @@ type PublicQuestion = {
   createdAt: string;
 };
 
-const fallbackLocation = {
-  latitude: 35.5486,
-  longitude: 129.3005,
-};
-
 const presentationByPlaceId: Record<string, Pick<Place, "distance" | "coordinates" | "goSignal">> = {
-  "ulsan-taehwagang": { distance: "1.2km", coordinates: { x: 28, y: 42 }, goSignal: "지금 가도 됨" },
-  "busan-gwangalli": { distance: "38km", coordinates: { x: 66, y: 34 }, goSignal: "비추" },
-  "gyeongju-hwangridan": { distance: "29km", coordinates: { x: 52, y: 62 }, goSignal: "애매함" },
-  "ulsan-city-hall": { distance: "2.1km", coordinates: { x: 36, y: 74 }, goSignal: "지금 가도 됨" },
+  "ulsan-taehwagang": { distance: "1.2km", coordinates: { x: 28, y: 42 }, goSignal: "제보 기준 괜찮음" },
+  "busan-gwangalli": { distance: "38km", coordinates: { x: 66, y: 34 }, goSignal: "제보 기준 혼잡" },
+  "gyeongju-hwangridan": { distance: "29km", coordinates: { x: 52, y: 62 }, goSignal: "제보 기준 애매" },
+  "ulsan-city-hall": { distance: "2.1km", coordinates: { x: 36, y: 74 }, goSignal: "제보 기준 괜찮음" },
 };
 
 const initialReport: ReportDraft = {
@@ -169,10 +164,10 @@ export default function SilsiganPrototype() {
     if (!navigator.geolocation) {
       setReportDraft((current) => ({
         ...current,
-        locationVerified: true,
-        clientLocation: fallbackLocation,
+        locationVerified: false,
+        clientLocation: null,
       }));
-      setToast("브라우저 위치 기능이 없어 데모 위치로 현장 인증을 적용했습니다.");
+      setToast("현장 인증을 할 수 없어요. 위치 권한을 허용하거나 인증 없이 올려주세요.");
       return;
     }
 
@@ -193,14 +188,14 @@ export default function SilsiganPrototype() {
           longitude: position.coords.longitude,
         },
       }));
-      setToast("현장 인증됨. 정확한 좌표는 저장하지 않고 거리 구간만 보냅니다.");
+      setToast("현장 인증됨. 정확한 위치는 저장하지 않고 장소와의 거리만 확인합니다.");
     } catch {
       setReportDraft((current) => ({
         ...current,
-        locationVerified: true,
-        clientLocation: fallbackLocation,
+        locationVerified: false,
+        clientLocation: null,
       }));
-      setToast("위치 권한이 없어 데모 위치로 현장 인증을 적용했습니다.");
+      setToast("현장 인증을 할 수 없어요. 다시 시도하거나 인증 없이 올릴 수 있습니다.");
     }
   };
 
@@ -227,14 +222,18 @@ export default function SilsiganPrototype() {
           photoMime: reportDraft.hasPhoto ? "image/jpeg" : undefined,
           photoSizeBytes: reportDraft.hasPhoto ? 128_000 : undefined,
           photoName: reportDraft.hasPhoto ? "field-report.jpg" : undefined,
-          clientLocation: reportDraft.clientLocation ?? fallbackLocation,
+          clientLocation: reportDraft.clientLocation ?? undefined,
         }),
       });
       const earned = result.credits.reduce((sum, event) => sum + Math.max(event.amount, 0), 0);
       setAskCredits(result.balance);
-      setTrustScore((current) => Math.min(current + 3, 99));
+      setTrustScore((current) => Math.min(current + (reportDraft.locationVerified ? 3 : 1), 99));
       setReportsSubmitted((current) => current + 1);
-      setToast(`지금 상황이 올라갔습니다. 물어보기권 +${earned}, 3시간 후 자동 만료됩니다.`);
+      setToast(
+        reportDraft.locationVerified
+          ? `지금 상황이 올라갔습니다. 물어보기권 +${earned}, 3시간 후 자동 만료됩니다.`
+          : `인증 없이 올라갔습니다. ${earned > 0 ? `물어보기권 +${earned}, ` : ""}현장 인증 없음으로 표시됩니다.`,
+      );
       setReportDraft(initialReport);
       setActiveTab("place");
       await loadData();
@@ -327,7 +326,13 @@ export default function SilsiganPrototype() {
           {!loading && places.length > 0 && (
             <>
               {activeTab === "home" && (
-                <HomeScreen places={places} reports={reports} onGoReport={() => setActiveTab("report")} onSelectPlace={selectPlace} />
+                <HomeScreen
+                  places={places}
+                  questions={questions}
+                  reports={reports}
+                  onGoReport={() => setActiveTab("report")}
+                  onSelectPlace={selectPlace}
+                />
               )}
               {activeTab === "map" && <MapScreen places={places} onSelectPlace={selectPlace} />}
               {activeTab === "place" && selectedPlace && (
@@ -400,11 +405,13 @@ function TopBar({ toast }: { toast: string }) {
 
 function HomeScreen({
   places,
+  questions,
   reports,
   onGoReport,
   onSelectPlace,
 }: {
   places: Place[];
+  questions: PublicQuestion[];
   reports: PublicReport[];
   onGoReport: () => void;
   onSelectPlace: (place: Place) => void;
@@ -412,6 +419,8 @@ function HomeScreen({
   const calmPlaces = places.filter((place) => place.crowdLevel === "quiet" || place.crowdLevel === "normal");
   const busyPlaces = places.filter((place) => place.crowdLevel === "busy" || place.crowdLevel === "packed");
   const recentReports = reports.slice(0, 3);
+  const featuredReport = recentReports[0];
+  const featuredPlace = featuredReport ? places.find((candidate) => candidate.id === featuredReport.placeId) : null;
 
   return (
     <div className="screen-stack">
@@ -436,10 +445,25 @@ function HomeScreen({
       <section className="section-block">
         <div className="section-title">
           <h2>방금 올라온 현장</h2>
-          <span>현장 인증</span>
+          <span>최근 3시간</span>
         </div>
+        {featuredReport && featuredPlace && (
+          <button className="featured-live-card" onClick={() => onSelectPlace(featuredPlace)} type="button">
+            <div className="featured-live-photo">
+              <Camera size={28} />
+              <span>{verificationLabel(featuredReport)}</span>
+            </div>
+            <div>
+              <strong>{featuredPlace.name}</strong>
+              <p>{featuredReport.comment ?? "현장 상태가 업데이트됐습니다."}</p>
+              <span>
+                {minutesAgo(featuredReport.createdAt)} · {featuredReport.photoUrl ? "사진 있음" : "사진 없음"}
+              </span>
+            </div>
+          </button>
+        )}
         <div className="live-feed">
-          {recentReports.map((report) => {
+          {recentReports.slice(featuredReport ? 1 : 0).map((report) => {
             const place = places.find((candidate) => candidate.id === report.placeId);
             return (
               <button className="live-card" key={report.id} onClick={() => place && onSelectPlace(place)} type="button">
@@ -449,7 +473,7 @@ function HomeScreen({
                 <div>
                   <strong>{place?.name ?? "현장"}</strong>
                   <p>{report.comment ?? "현장 상태가 업데이트됐습니다."}</p>
-                  <span>{minutesAgo(report.createdAt)} · 현장 인증 · {report.photoUrl ? "사진 있음" : "사진 없음"}</span>
+                  <span>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · {report.photoUrl ? "사진 있음" : "사진 없음"}</span>
                 </div>
               </button>
             );
@@ -458,6 +482,7 @@ function HomeScreen({
       </section>
 
       <QuickStats />
+      <AnswerableQuestions questions={questions} places={places} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 물어본 곳" places={places} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 혼잡한 곳" places={busyPlaces} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 한산한 곳" places={calmPlaces} onSelectPlace={onSelectPlace} />
@@ -482,6 +507,54 @@ function QuickStats() {
         <BadgeCheck size={18} />
         <strong>비공개</strong>
         <span>개인 위치</span>
+      </div>
+    </section>
+  );
+}
+
+function AnswerableQuestions({
+  questions,
+  places,
+  onSelectPlace,
+}: {
+  questions: PublicQuestion[];
+  places: Place[];
+  onSelectPlace: (place: Place) => void;
+}) {
+  const openQuestions = questions.slice(0, 3);
+
+  if (openQuestions.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="section-block">
+      <div className="section-title">
+        <h2>내 주변 답변 가능한 질문</h2>
+        <span>답하면 +2</span>
+      </div>
+      <div className="answer-list">
+        {openQuestions.map((question) => {
+          const place = places.find((candidate) => candidate.id === question.placeId);
+
+          return (
+            <button
+              className="answer-card"
+              disabled={!place}
+              key={question.id}
+              onClick={() => place && onSelectPlace(place)}
+              type="button"
+            >
+              <MessageCircleQuestion size={20} />
+              <div>
+                <strong>{question.body}</strong>
+                <span>
+                  {place?.name ?? "장소 확인 중"} · {questionTypeLabels[question.questionType]} · {minutesAgo(question.createdAt)}
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -586,8 +659,8 @@ function PlaceScreen({
           {(reports.length ? reports : []).slice(0, 3).map((report, index) => (
             <div className="photo-tile" key={report.id}>
               <Camera size={22} />
-              <span>{report.comment ?? place.photos[index] ?? "현장 인증 제보"}</span>
-              <small>{minutesAgo(report.createdAt)} · 현장 인증 · {report.photoUrl ? "사진 있음" : "사진 없음"}</small>
+              <span>{report.comment ?? place.photos[index] ?? "현장 제보"}</span>
+              <small>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · {report.photoUrl ? "사진 있음" : "사진 없음"}</small>
             </div>
           ))}
         </div>
@@ -664,6 +737,8 @@ function ReportScreen({
   onSubmit: () => void;
   place: Place;
 }) {
+  const isSensitive = place.category === "hospital" || place.category === "public_office";
+
   return (
     <form className="screen-stack" onSubmit={(event) => event.preventDefault()}>
       <section className="form-hero">
@@ -671,7 +746,7 @@ function ReportScreen({
         <h2>{place.name}</h2>
         <p>사진, 사람, 주차, 한 줄만 빠르게 남깁니다. 줄과 날씨는 선택입니다.</p>
       </section>
-      {(place.category === "hospital" || place.category === "public_office") && <SensitiveWarning />}
+      {isSensitive && <SensitiveWarning />}
       <input
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
@@ -679,10 +754,14 @@ function ReportScreen({
         ref={fileInputRef}
         type="file"
       />
-      <button className="upload-box" onClick={() => fileInputRef.current?.click()} type="button">
+      <button className={`upload-box ${isSensitive ? "upload-box--caution" : ""}`} onClick={() => fileInputRef.current?.click()} type="button">
         {draft.photoPreviewUrl ? <span className="photo-preview-dot" /> : <Upload size={24} />}
-        <strong>{draft.hasPhoto ? "사진 선택됨" : "사진 추가"}</strong>
-        <span>JPG, PNG, WebP 사진을 올릴 수 있어요. 사진 속 위치정보와 개인정보는 정리합니다.</span>
+        <strong>{draft.hasPhoto ? "사진 선택됨" : isSensitive ? "외부/주차장 사진만 선택" : "사진 추가"}</strong>
+        <span>
+          {isSensitive
+            ? "사진은 선택이에요. 얼굴, 접수번호, 서류, 진료정보가 보이는 내부 사진은 올릴 수 없습니다."
+            : "JPG, PNG, WebP 사진을 올릴 수 있어요. 사진 속 위치정보와 개인정보는 보이지 않게 정리합니다."}
+        </span>
       </button>
       <SegmentedControl
         label="사람"
@@ -724,12 +803,27 @@ function ReportScreen({
         <CheckCircle2 size={22} />
         <div>
           <strong>{draft.locationVerified ? "현장 인증됨" : "현장 인증하기"}</strong>
-          <p>정확한 좌표는 저장하지 않고 장소와의 거리 구간만 저장합니다.</p>
+          <p>
+            {draft.locationVerified
+              ? "정확한 위치는 저장하지 않고 장소와의 거리만 확인합니다."
+              : "위치 권한을 허용하면 현장 인증으로 표시됩니다."}
+          </p>
         </div>
       </button>
-      <ActionButton disabled={!draft.locationVerified || isSubmitting} onClick={onSubmit} type="button">
-        {isSubmitting ? "올리는 중..." : "지금 상황 올리기"}
-      </ActionButton>
+      {draft.locationVerified ? (
+        <ActionButton disabled={isSubmitting} onClick={onSubmit} type="button">
+          {isSubmitting ? "올리는 중..." : "현장 인증으로 올리기"}
+        </ActionButton>
+      ) : (
+        <div className="location-actions">
+          <ActionButton disabled={isSubmitting} onClick={onRequestLocation} type="button" variant="secondary">
+            현장 인증 다시 시도
+          </ActionButton>
+          <ActionButton disabled={isSubmitting} onClick={onSubmit} type="button" variant="secondary">
+            인증 없이 제보하기
+          </ActionButton>
+        </div>
+      )}
     </form>
   );
 }
@@ -845,7 +939,7 @@ function MyScreen({
       </section>
       <section className="policy-list">
         <h2>안전 정책</h2>
-        <p>원본 좌표는 공개하지 않고 거리 구간으로만 표시합니다.</p>
+        <p>정확한 내 위치는 공개하지 않고 현장 인증 여부만 보여줍니다.</p>
         <p>사진 속 위치정보와 원본 파일명은 보이지 않게 정리합니다.</p>
         <p>허위 확정 신고는 신뢰 점수와 물어보기권 차감에 반영됩니다.</p>
       </section>
@@ -909,7 +1003,7 @@ function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: Pu
     const presentation = presentationByPlaceId[place.id] ?? {
       distance: `${index + 1}.0km`,
       coordinates: { x: 30 + index * 12, y: 40 + index * 8 },
-      goSignal: "애매함" as const,
+      goSignal: "제보 기준 애매" as const,
     };
     const crowdLevel = latest?.crowdLevel ?? "normal";
     const lineStatus = latest?.lineStatus ?? "none";
@@ -934,9 +1028,10 @@ function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: Pu
       reports: latestReports.length,
       questions: questions.filter((question) => question.placeId === place.id).length,
       coordinates: presentation.coordinates,
-      photos: latestReports.map((report) => report.comment ?? "현장 인증 제보"),
+      photos: latestReports.map((report) => report.comment ?? "현장 제보"),
       safetyWarning: "safetyWarning" in place && typeof place.safetyWarning === "string" ? place.safetyWarning : null,
-      goSignal: latest?.crowdLevel === "packed" || latest?.parkingStatus === "full" ? "비추" : presentation.goSignal,
+      goSignal:
+        latest?.crowdLevel === "packed" || latest?.parkingStatus === "full" ? "제보 기준 혼잡" : presentation.goSignal,
     };
   });
 }
@@ -952,13 +1047,17 @@ function minutesAgo(createdAt: string) {
 }
 
 function signalClass(signal: Place["goSignal"]) {
-  if (signal === "지금 가도 됨") {
+  if (signal === "제보 기준 괜찮음") {
     return "good";
   }
 
-  if (signal === "비추") {
+  if (signal === "제보 기준 혼잡") {
     return "bad";
   }
 
   return "caution";
+}
+
+function verificationLabel(report: Pick<PublicReport, "verifiedRadiusM">) {
+  return report.verifiedRadiusM ? "현장 인증" : "현장 인증 없음";
 }

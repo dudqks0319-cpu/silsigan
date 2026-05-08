@@ -33,7 +33,7 @@ export type Place = {
   };
   photos: string[];
   safetyWarning: string | null;
-  goSignal: "지금 가도 됨" | "애매함" | "비추";
+  goSignal: "제보 기준 괜찮음" | "제보 기준 애매" | "제보 기준 혼잡";
 };
 
 export type FieldOption = {

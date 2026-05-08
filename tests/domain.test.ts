@@ -99,6 +99,30 @@ test("report creation returns a coarse radius and does not persist client coordi
   assert.equal("longitude" in result.report, false);
 });
 
+test("report creation can publish without field verification when location is absent", () => {
+  const result = createReport({
+    placeId: "gyeongju-hwangridan",
+    category: "restaurant_cafe",
+    crowdLevel: "busy",
+    lineStatus: "medium",
+    parkingStatus: "limited",
+    weatherFeel: "good",
+    comment: "인증 없이 올리는 제보입니다.",
+    photoMime: "image/jpeg",
+    photoSizeBytes: 1_024,
+    photoName: "cafe.jpg",
+  });
+
+  const earned = result.credits.reduce((sum: number, event: { amount: number }) => sum + Math.max(event.amount, 0), 0);
+
+  assert.equal(result.report.verifiedRadiusM, null);
+  assert.equal("clientLocation" in result.report, false);
+  assert.equal("latitude" in result.report, false);
+  assert.equal("longitude" in result.report, false);
+  assert.equal(earned, 1);
+  assert.match(result.privacyNotice, /현장 인증 없이/);
+});
+
 test("report creation rejects reports outside the verified radius", () => {
   try {
     createReport({

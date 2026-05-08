@@ -466,7 +466,8 @@ img {
 .photo-strip,
 .question-preview,
 .policy-list,
-.live-feed {
+.live-feed,
+.answer-list {
   display: grid;
   gap: 10px;
 }
@@ -497,6 +498,8 @@ img {
 
 .place-card,
 .live-card,
+.featured-live-card,
+.answer-card,
 .detail-hero,
 .form-hero,
 .profile-card,
@@ -512,9 +515,10 @@ img {
 }
 
 .place-card,
-.live-card {
+.live-card,
+.featured-live-card,
+.answer-card {
   display: grid;
-  grid-template-columns: 1fr auto;
   gap: 12px;
   width: 100%;
   padding: 15px;
@@ -522,8 +526,22 @@ img {
   text-align: left;
 }
 
+.featured-live-card {
+  grid-template-columns: 120px 1fr;
+  align-items: stretch;
+}
+
+.place-card {
+  grid-template-columns: 1fr auto;
+}
+
 .live-card {
   grid-template-columns: 74px 1fr;
+  align-items: center;
+}
+
+.answer-card {
+  grid-template-columns: auto 1fr;
   align-items: center;
 }
 
@@ -540,16 +558,57 @@ img {
   font-weight: 800;
 }
 
-.live-thumb {
+.featured-live-card p {
+  margin: 6px 0 8px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.42;
+}
+
+.featured-live-card span,
+.answer-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.answer-card strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.live-thumb,
+.featured-live-photo {
   display: grid;
   place-items: center;
-  width: 62px;
-  height: 62px;
   color: #fff;
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.58)),
     linear-gradient(135deg, #58b8a8, #5967d8);
   border-radius: 16px;
+}
+
+.live-thumb {
+  width: 62px;
+  height: 62px;
+}
+
+.featured-live-photo {
+  align-content: end;
+  gap: 8px;
+  min-height: 112px;
+  padding: 12px;
+}
+
+.featured-live-photo span {
+  width: fit-content;
+  padding: 6px 8px;
+  color: #fff;
+  background: rgba(17, 24, 39, 0.58);
+  border-radius: 999px;
+  font-size: 11px;
 }
 
 .place-card h3 {
@@ -798,6 +857,12 @@ img {
   text-align: center;
 }
 
+.upload-box--caution {
+  color: var(--warning);
+  background: #fffaf0;
+  border-color: #e9bd55;
+}
+
 .photo-preview-dot {
   width: 52px;
   height: 52px;
@@ -892,6 +957,12 @@ img {
 
 .optional-fields .segmented-field {
   margin-top: 12px;
+}
+
+.location-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .example-chips {
@@ -1038,7 +1109,9 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .sticky-actions {
+  .featured-live-card,
+  .sticky-actions,
+  .location-actions {
     grid-template-columns: 1fr;
   }
 }

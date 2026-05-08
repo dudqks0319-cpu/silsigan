@@ -8,6 +8,12 @@ const { validatePhotoUpload, sanitizePhotoUpload } = await import(
   new URL("../src/lib/photo-validation.ts", import.meta.url).href
 );
 const { checkRateLimit, resetRateLimits } = await import(new URL("../src/lib/rate-limit.ts", import.meta.url).href);
+const { assertAdminTokenHeader, isAdminCookieAuthorized } = await import(
+  new URL("../src/lib/admin-auth.ts", import.meta.url).href
+);
+const { GET: getModerationFlags } = await import(
+  new URL("../src/app/api/moderation-flags/route.ts", import.meta.url).href
+);
 
 test("public reports expose coarse radius but not exact client coordinates", () => {
   const latitude = 35.5486;
@@ -31,8 +37,26 @@ test("public reports expose coarse radius but not exact client coordinates", () 
   assert.equal(serialized.includes(String(longitude)), false);
 
   const publicReports = listPublicReports({ placeId: "ulsan-taehwagang" });
-  assert.ok(publicReports.every((report: { verifiedRadiusM?: number }) => report.verifiedRadiusM));
+  assert.ok(publicReports.every((report: { verifiedRadiusM?: number | null }) => "verifiedRadiusM" in report));
   assert.equal(JSON.stringify(publicReports).includes("clientLocation"), false);
+});
+
+test("unverified reports are accepted without leaking fallback coordinates", () => {
+  const result = createReport({
+    placeId: "ulsan-taehwagang",
+    category: "tourism",
+    crowdLevel: "normal",
+    lineStatus: "short",
+    parkingStatus: "limited",
+    weatherFeel: "windy",
+    comment: "위치 권한 없이 올린 제보입니다.",
+  });
+
+  const serialized = JSON.stringify(result);
+  assert.equal(result.report.verifiedRadiusM, null);
+  assert.equal(serialized.includes("clientLocation"), false);
+  assert.equal(serialized.includes("35.5486"), false);
+  assert.equal(serialized.includes("129.3005"), false);
 });
 
 test("server-side credit boundary ignores spoofed availableCredits", () => {
@@ -69,6 +93,49 @@ test("rate limiter blocks excessive actions by server-derived actor", () => {
     () => checkRateLimit({ action: "create_report", actorId: "actor-a", now: 1_000 }),
     (error: unknown) => (error as { code?: string }).code === "RATE_LIMITED",
   );
+});
+
+test("moderation queue requires an admin token", () => {
+  assert.throws(
+    () => assertAdminTokenHeader(new Request("http://localhost/api/moderation-flags"), undefined),
+    (error: unknown) => (error as { code?: string }).code === "ADMIN_AUTH_REQUIRED",
+  );
+
+  assert.throws(
+    () => assertAdminTokenHeader(new Request("http://localhost/api/moderation-flags"), "secret-token"),
+    (error: unknown) => (error as { code?: string }).code === "ADMIN_AUTH_REQUIRED",
+  );
+
+  assert.doesNotThrow(() =>
+    assertAdminTokenHeader(
+      new Request("http://localhost/api/moderation-flags", {
+        headers: { authorization: "Bearer secret-token" },
+      }),
+      "secret-token",
+    ),
+  );
+
+  assert.equal(isAdminCookieAuthorized("secret-token", "secret-token"), true);
+  assert.equal(isAdminCookieAuthorized("wrong-token", "secret-token"), false);
+});
+
+test("moderation queue route returns 401 without admin token", async () => {
+  const previousToken = process.env.ADMIN_MODERATION_TOKEN;
+  delete process.env.ADMIN_MODERATION_TOKEN;
+
+  try {
+    const response = await getModerationFlags(new Request("http://localhost/api/moderation-flags"));
+    const payload = await response.json() as { error?: { code?: string } };
+
+    assert.equal(response.status, 401);
+    assert.equal(payload.error?.code, "ADMIN_AUTH_REQUIRED");
+  } finally {
+    if (previousToken === undefined) {
+      delete process.env.ADMIN_MODERATION_TOKEN;
+    } else {
+      process.env.ADMIN_MODERATION_TOKEN = previousToken;
+    }
+  }
 });
 
 test("photo validation rejects unsupported and mismatched uploads", () => {

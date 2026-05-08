@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { ZodError } from "zod";
 import { ApiError } from "./errors.ts";
 
