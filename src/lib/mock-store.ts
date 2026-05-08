@@ -1,5 +1,6 @@
 import {
   type FlagReason,
+  type CreditEvent,
   type Place,
   type StoredQuestion,
   type StoredReport,
@@ -14,6 +15,7 @@ import {
   verifiedRadiusFromDistance,
 } from "./domain.ts";
 import { ApiError } from "./errors.ts";
+import { sanitizePhotoUpload } from "./photo-validation.ts";
 import type { CreateQuestionInput, CreateReportInput, FlagReportInput } from "./validators.ts";
 
 export const mockPlaces: Place[] = [
@@ -55,9 +57,106 @@ export const mockPlaces: Place[] = [
   },
 ];
 
-const reports: StoredReport[] = [];
-const questions: StoredQuestion[] = [];
+const demoNow = new Date("2026-05-08T10:30:00.000Z");
+
+const reports: StoredReport[] = [
+  {
+    id: "report_seed_ulsan_1",
+    placeId: "ulsan-taehwagang",
+    category: "tourism",
+    crowdLevel: "normal",
+    lineStatus: "short",
+    parkingStatus: "limited",
+    weatherFeel: "windy",
+    comment: "잔디광장은 여유 있는데 주차장은 조금 붐벼요.",
+    photoUrl: "mock://taehwagang-parking",
+    verifiedRadiusM: 50,
+    createdAt: new Date(demoNow.getTime() - 4 * 60 * 1000).toISOString(),
+    expiresAt: getReportExpiry(new Date(demoNow.getTime() - 4 * 60 * 1000)).toISOString(),
+    flagCount: 0,
+    hiddenAt: null,
+  },
+  {
+    id: "report_seed_busan_1",
+    placeId: "busan-gwangalli",
+    category: "tourism",
+    crowdLevel: "packed",
+    lineStatus: "medium",
+    parkingStatus: "full",
+    weatherFeel: "good",
+    comment: "해변 앞 보행 통로가 막히기 시작했고 공영주차장은 만차예요.",
+    photoUrl: "mock://gwangalli-event",
+    verifiedRadiusM: 150,
+    createdAt: new Date(demoNow.getTime() - 8 * 60 * 1000).toISOString(),
+    expiresAt: getReportExpiry(new Date(demoNow.getTime() - 8 * 60 * 1000)).toISOString(),
+    flagCount: 0,
+    hiddenAt: null,
+  },
+  {
+    id: "report_seed_gyeongju_1",
+    placeId: "gyeongju-hwangridan",
+    category: "restaurant_cafe",
+    crowdLevel: "busy",
+    lineStatus: "medium",
+    parkingStatus: "limited",
+    weatherFeel: "good",
+    comment: "인기 카페는 20분 정도 기다리고 골목 이동은 가능해요.",
+    photoUrl: "mock://hwangridan-cafe",
+    verifiedRadiusM: 50,
+    createdAt: new Date(demoNow.getTime() - 12 * 60 * 1000).toISOString(),
+    expiresAt: getReportExpiry(new Date(demoNow.getTime() - 12 * 60 * 1000)).toISOString(),
+    flagCount: 0,
+    hiddenAt: null,
+  },
+  {
+    id: "report_seed_office_1",
+    placeId: "ulsan-city-hall",
+    category: "public_office",
+    crowdLevel: "normal",
+    lineStatus: "short",
+    parkingStatus: "limited",
+    weatherFeel: "rainy",
+    comment: "민원 창구 대기는 많지 않고 주차장은 입구 쪽이 붐벼요.",
+    photoUrl: null,
+    verifiedRadiusM: 150,
+    createdAt: new Date(demoNow.getTime() - 16 * 60 * 1000).toISOString(),
+    expiresAt: getReportExpiry(new Date(demoNow.getTime() - 16 * 60 * 1000)).toISOString(),
+    flagCount: 0,
+    hiddenAt: null,
+  },
+];
+
+const questions: StoredQuestion[] = [
+  {
+    id: "question_seed_1",
+    placeId: "ulsan-taehwagang",
+    questionType: "parking",
+    body: "지금 국가정원 공영주차장 들어갈 수 있나요?",
+    creditCost: 1,
+    createdAt: new Date(demoNow.getTime() - 6 * 60 * 1000).toISOString(),
+  },
+  {
+    id: "question_seed_2",
+    placeId: "busan-gwangalli",
+    questionType: "photo_request",
+    body: "무대 앞쪽 사진으로 볼 수 있을까요?",
+    creditCost: 2,
+    createdAt: new Date(demoNow.getTime() - 10 * 60 * 1000).toISOString(),
+  },
+];
+
 const flagsByReportId = new Map<string, FlagReason[]>();
+const creditEventsByActorId = new Map<string, CreditEvent[]>();
+
+type CreateQuestionOptions = {
+  actorId?: string;
+  getCreditBalance?: () => number;
+  recordCreditEvent?: (event: ReturnType<typeof creditEventForQuestion>) => void;
+};
+
+function seedCredits() {
+  return [{ type: "signup_bonus" as const, amount: 3 }];
+}
 
 export function listPlaces() {
   return mockPlaces.map((place) => ({
@@ -86,11 +185,23 @@ export function listReports(filters: { placeId?: string; includeExpired?: boolea
   });
 }
 
-export function createReport(input: CreateReportInput) {
+export function listPublicReports(filters: { placeId?: string; includeExpired?: boolean } = {}) {
+  return listReports(filters).map(maskReportForPublic);
+}
+
+export function createReport(input: CreateReportInput, options: { actorId?: string } = {}) {
   const place = findPlace(input.placeId);
   if (input.category !== place.category) {
     throw new ApiError(400, "CATEGORY_MISMATCH", "제보 카테고리가 장소 카테고리와 일치하지 않습니다.");
   }
+
+  const sanitizedPhoto = input.photoMime && input.photoSizeBytes !== undefined
+    ? sanitizePhotoUpload({
+        name: input.photoName ?? "field-report.jpg",
+        mimeType: input.photoMime,
+        sizeBytes: input.photoSizeBytes,
+      })
+    : null;
 
   const distanceM = distanceMeters(input.clientLocation, {
     latitude: place.latitude,
@@ -114,7 +225,7 @@ export function createReport(input: CreateReportInput) {
     parkingStatus: input.parkingStatus,
     weatherFeel: input.weatherFeel,
     comment: input.comment || null,
-    photoUrl: input.photoUrl || null,
+    photoUrl: sanitizedPhoto ? `mock-storage://${sanitizedPhoto.storagePath}` : input.photoUrl || null,
     verifiedRadiusM,
     createdAt: now.toISOString(),
     expiresAt: getReportExpiry(now).toISOString(),
@@ -123,12 +234,15 @@ export function createReport(input: CreateReportInput) {
   };
 
   reports.unshift(report);
+  addCredits(options.actorId ?? "demo-user", creditEventsForReport(true, Boolean(report.photoUrl)));
 
   return {
-    report,
-    credits: creditEventsForReport(true, Boolean(input.photoUrl)),
+    report: maskReportForPublic(report),
+    credits: creditEventsForReport(true, Boolean(report.photoUrl)),
+    balance: getCreditBalance(options.actorId ?? "demo-user"),
+    ...(sanitizedPhoto ? { photo: sanitizedPhoto } : {}),
     safetyWarning: getCategorySafetyWarning(input.category),
-    privacyNotice: "클라이언트 좌표는 반경 검증에만 사용되며 목업 저장소와 DB 모델에 저장하지 않습니다.",
+    privacyNotice: "정확한 위치는 현장 확인에만 쓰고 저장하지 않습니다.",
   };
 }
 
@@ -136,15 +250,30 @@ export function listQuestions(placeId?: string) {
   return questions.filter((question) => !placeId || question.placeId === placeId);
 }
 
-export function createQuestion(input: CreateQuestionInput) {
+export function listPublicQuestions(placeId?: string) {
+  return listQuestions(placeId).map(maskQuestionForPublic);
+}
+
+export function createQuestion(input: CreateQuestionInput, options: CreateQuestionOptions = {}) {
   findPlace(input.placeId);
 
   const creditCost = getQuestionCost(input.questionType);
-  if (input.availableCredits < creditCost) {
-    throw new ApiError(402, "INSUFFICIENT_CREDITS", "질문권이 부족합니다.", {
+  const actorId = options.actorId ?? "demo-user";
+  const getBalance = options.getCreditBalance ?? (() => getCreditBalance(actorId));
+  const availableCredits = getBalance();
+
+  if (availableCredits < creditCost) {
+    throw new ApiError(402, "INSUFFICIENT_CREDITS", "물어보기권이 부족합니다.", {
       requiredCredits: creditCost,
-      availableCredits: input.availableCredits,
+      availableCredits,
     });
+  }
+
+  const creditEvent = creditEventForQuestion(input.questionType);
+  if (options.recordCreditEvent) {
+    options.recordCreditEvent(creditEvent);
+  } else {
+    addCredits(actorId, [creditEvent]);
   }
 
   const question: StoredQuestion = {
@@ -159,8 +288,10 @@ export function createQuestion(input: CreateQuestionInput) {
   questions.unshift(question);
 
   return {
-    question,
-    creditEvent: creditEventForQuestion(input.questionType),
+    question: maskQuestionForPublic(question),
+    creditEvent,
+    balance: getCreditBalance(actorId),
+    trustBoundary: "보유한 물어보기권 기준으로만 등록됩니다.",
   };
 }
 
@@ -184,6 +315,59 @@ export function flagReport(input: FlagReportInput) {
     hidden: Boolean(report.hiddenAt),
     flagCount: report.flagCount,
     hideRule: "privacy/sensitive 1건, 허위 2건, 전체 신고 3건 이상이면 자동 숨김 처리",
+  };
+}
+
+export function getCreditBalance(actorId = "demo-user") {
+  const events = creditEventsByActorId.get(actorId) ?? seedCredits();
+  creditEventsByActorId.set(actorId, events);
+
+  return events.reduce((balance, event) => balance + event.amount, 0);
+}
+
+export function getModerationQueue() {
+  return reports
+    .filter((report) => report.flagCount > 0 || report.hiddenAt)
+    .map((report) => ({
+      ...maskReportForPublic(report),
+      flagReasons: flagsByReportId.get(report.id) ?? [],
+      status: report.hiddenAt ? "hidden" : "needs_review",
+    }));
+}
+
+function addCredits(actorId: string, events: ReturnType<typeof creditEventsForReport>) {
+  const currentEvents = creditEventsByActorId.get(actorId) ?? seedCredits();
+  currentEvents.push(...events);
+  creditEventsByActorId.set(actorId, currentEvents);
+}
+
+function maskReportForPublic(report: StoredReport) {
+  return {
+    id: report.id,
+    placeId: report.placeId,
+    category: report.category,
+    crowdLevel: report.crowdLevel,
+    lineStatus: report.lineStatus,
+    parkingStatus: report.parkingStatus,
+    weatherFeel: report.weatherFeel,
+    comment: report.comment,
+    photoUrl: report.photoUrl,
+    verifiedRadiusM: report.verifiedRadiusM,
+    createdAt: report.createdAt,
+    expiresAt: report.expiresAt,
+    flagCount: report.flagCount,
+    hiddenAt: report.hiddenAt,
+  };
+}
+
+function maskQuestionForPublic(question: StoredQuestion) {
+  return {
+    id: question.id,
+    placeId: question.placeId,
+    questionType: question.questionType,
+    body: question.body,
+    creditCost: question.creditCost,
+    createdAt: question.createdAt,
   };
 }
 

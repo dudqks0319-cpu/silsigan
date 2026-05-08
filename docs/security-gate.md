@@ -12,25 +12,26 @@
 - [x] 모든 사용자 데이터 테이블에 Supabase RLS가 켜져 있다.
 - [x] RLS 정책은 공개 데이터 제한 조회와 본인 민감 데이터 읽기 제한을 정의한다.
 - [x] 위치 원본 위도/경도가 DB 스키마에 저장되지 않는다.
-- [ ] 사진 EXIF/GPS 제거와 서버 재인코딩이 샘플 이미지로 검증되었다.
+- [x] 사진 업로드 검증 seam이 MIME/용량/서명 불일치와 EXIF/GPS 제거 의도를 테스트한다.
 - [x] 병원/관공서 카테고리의 민감정보 경고와 제한 정책이 제품에 반영되었다.
-- [x] 신고 접수와 우선 숨김 목업 API가 동작한다.
-- [x] 질문권/포인트 변경은 목업 서버 로직으로 계산하며 client direct DB insert는 RLS에서 열지 않는다.
+- [x] 신고 접수, 우선 숨김 목업 API, 운영자 신고 큐 초안이 동작한다.
+- [x] 질문권/포인트 변경은 서버 목업 원장으로 계산하며 client direct DB insert는 RLS에서 열지 않는다.
+- [x] 제보/질문/신고 API에 서버 파생 actor 기준 rate limit이 적용되어 있다.
 - [x] validation 실패 케이스의 negative-path 테스트가 있다.
 
 ## 남은 출시 차단 항목
 
 | 항목 | Owner | Due date |
 | --- | --- | --- |
-| 사진 EXIF/GPS 제거와 서버 재인코딩 샘플 검증 | FullStackDev | 2026-05-15 |
-| 운영자 삭제/신고 큐와 실제 DB/Storage 삭제 연결 | FullStackDev | 2026-05-15 |
+| 실제 이미지 바이너리 재인코딩과 샘플 전후 비교 | FullStackDev | 2026-05-15 |
+| 운영자 삭제 처리와 실제 DB/Storage 삭제 연결 | FullStackDev | 2026-05-15 |
 | Supabase Auth 세션과 service-role 서버 트랜잭션 실제 DB 연결 | FullStackDev | 2026-05-14 |
 | 모바일/데스크톱 브라우저 시각 QA 스크린샷 확보 | DesignMarketing | 2026-05-10 |
-| Rate limit 적용 | FullStackDev | 2026-05-15 |
 
 ## P1 운영 보완 항목
 
-- [ ] Rate limit이 제보/질문/신고/업로드에 적용되어 있다.
+- [x] Rate limit이 제보/질문/신고에 적용되어 있다.
+- [ ] 업로드 전용 rate limit이 실제 Storage API에 적용되어 있다.
 - [ ] 신고 큐 운영자 알림 채널이 있다.
 - [ ] 삭제 SLA와 담당자가 정해져 있다.
 - [ ] Storage 파일 삭제와 DB soft delete 정합성 테스트가 있다.

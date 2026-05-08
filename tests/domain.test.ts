@@ -13,7 +13,9 @@ const {
   verifiedRadiusFromDistance,
 } = await import(new URL("../src/lib/domain.ts", import.meta.url).href);
 
-const { createReport } = await import(new URL("../src/lib/mock-store.ts", import.meta.url).href);
+const { createQuestion, createReport, listQuestions } = await import(
+  new URL("../src/lib/mock-store.ts", import.meta.url).href
+);
 
 test("reports expire three hours after creation", () => {
   const createdAt = new Date("2026-05-08T00:00:00.000Z");
@@ -61,8 +63,14 @@ test("flag rules hide privacy-sensitive, repeated false, or high-volume reports"
 
 test("verified radius stores only coarse radius buckets", () => {
   assert.equal(verifiedRadiusFromDistance(30), 50);
+  assert.equal(verifiedRadiusFromDistance(50), 50);
+  assert.equal(verifiedRadiusFromDistance(51), 150);
   assert.equal(verifiedRadiusFromDistance(120), 150);
+  assert.equal(verifiedRadiusFromDistance(150), 150);
+  assert.equal(verifiedRadiusFromDistance(151), 300);
   assert.equal(verifiedRadiusFromDistance(250), 300);
+  assert.equal(verifiedRadiusFromDistance(300), 300);
+  assert.equal(verifiedRadiusFromDistance(300.01), null);
   assert.equal(verifiedRadiusFromDistance(301), null);
 });
 
@@ -89,4 +97,66 @@ test("report creation returns a coarse radius and does not persist client coordi
   assert.equal("clientLocation" in result.report, false);
   assert.equal("latitude" in result.report, false);
   assert.equal("longitude" in result.report, false);
+});
+
+test("report creation rejects reports outside the verified radius", () => {
+  try {
+    createReport({
+        placeId: "ulsan-taehwagang",
+        category: "tourism",
+        crowdLevel: "normal",
+        lineStatus: "short",
+        parkingStatus: "limited",
+        weatherFeel: "windy",
+        comment: "멀리서 올린 제보입니다.",
+        clientLocation: {
+          latitude: 35.0,
+          longitude: 129.0,
+        },
+      });
+    assert.fail("Expected createReport to reject distant location");
+  } catch (error) {
+    assert.equal((error as { code?: string }).code, "LOCATION_NOT_VERIFIED");
+  }
+});
+
+test("question creation ignores spoofed client credits when server balance is lower", () => {
+  try {
+    createQuestion(
+        {
+          placeId: "ulsan-taehwagang",
+          questionType: "photo_request",
+          body: "사진으로 볼 수 있을까요?",
+          availableCredits: 999,
+        },
+        {
+          getCreditBalance: () => 0,
+        },
+      );
+    assert.fail("Expected createQuestion to reject insufficient server credits");
+  } catch (error) {
+    assert.equal((error as { code?: string }).code, "INSUFFICIENT_CREDITS");
+  }
+});
+
+test("question creation does not write when credits are insufficient", () => {
+  const before = listQuestions("ulsan-taehwagang").length;
+
+  try {
+    createQuestion(
+        {
+          placeId: "ulsan-taehwagang",
+          questionType: "photo_request",
+          body: "사진 요청 질문입니다.",
+        },
+        {
+          getCreditBalance: () => 1,
+        },
+      );
+    assert.fail("Expected createQuestion to reject insufficient credits");
+  } catch (error) {
+    assert.equal((error as { code?: string }).code, "INSUFFICIENT_CREDITS");
+  }
+
+  assert.equal(listQuestions("ulsan-taehwagang").length, before);
 });

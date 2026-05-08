@@ -1,12 +1,7 @@
 import type React from "react";
-import type { CrowdLevel, FieldOption } from "./types";
-
-const crowdLabels: Record<CrowdLevel, string> = {
-  safe: "여유",
-  normal: "보통",
-  busy: "혼잡",
-  crowded: "매우 혼잡"
-};
+import type { CrowdLevel } from "@/lib/domain";
+import type { FieldOption } from "./types";
+import { crowdLabels } from "./labels";
 
 type StatusPillProps = {
   level: CrowdLevel;

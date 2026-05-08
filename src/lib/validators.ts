@@ -23,6 +23,9 @@ export const createReportSchema = z.object({
   weatherFeel: z.enum(weatherFeels),
   comment: z.string().trim().max(120).optional(),
   photoUrl: z.string().url().max(2_048).optional(),
+  photoName: z.string().trim().max(160).optional(),
+  photoMime: z.string().trim().max(80).optional(),
+  photoSizeBytes: z.number().int().min(0).max(8 * 1024 * 1024).optional(),
   clientLocation: coordinateSchema,
 });
 
@@ -37,7 +40,7 @@ export const createQuestionSchema = z.object({
   placeId: z.string().min(1).max(80),
   questionType: z.enum(questionTypes),
   body: z.string().trim().min(4).max(160),
-  availableCredits: z.number().int().min(0).max(999).default(3),
+  availableCredits: z.number().int().min(0).max(999).optional(),
 });
 
 export type CreateQuestionInput = z.infer<typeof createQuestionSchema>;

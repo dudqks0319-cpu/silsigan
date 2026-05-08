@@ -1,5 +1,6 @@
 import { fail, ok } from "@/lib/api";
-import { createReport, listReports } from "@/lib/mock-store";
+import { createReport, listPublicReports } from "@/lib/mock-store";
+import { actorIdFromRequest, checkRateLimit } from "@/lib/rate-limit";
 import { createReportSchema, listReportsSchema } from "@/lib/validators";
 
 export async function GET(request: Request) {
@@ -10,8 +11,8 @@ export async function GET(request: Request) {
       includeExpired: url.searchParams.get("includeExpired") ?? undefined,
     });
 
-    return ok(listReports(filters), {
-      privacy: "사용자 정확 좌표는 응답하지 않습니다. 제보에는 verifiedRadiusM만 포함됩니다.",
+    return ok(listPublicReports(filters), {
+      privacy: "정확한 내 위치는 보여주지 않고 현장 인증 범위만 표시합니다.",
     });
   } catch (error) {
     return fail(error);
@@ -20,9 +21,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const actorId = actorIdFromRequest(request);
+    checkRateLimit({ action: "create_report", actorId });
     const input = createReportSchema.parse(await request.json());
 
-    return ok(createReport(input));
+    return ok(createReport(input, { actorId }));
   } catch (error) {
     return fail(error);
   }

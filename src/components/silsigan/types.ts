@@ -1,26 +1,26 @@
 import type { LucideIcon } from "lucide-react";
-
-export type CrowdLevel = "safe" | "normal" | "busy" | "crowded";
-
-export type PlaceCategory =
-  | "tour"
-  | "event"
-  | "food"
-  | "hospital"
-  | "office"
-  | "parking";
+import type {
+  CrowdLevel,
+  LineStatus,
+  ParkingStatus,
+  QuestionType,
+  ReportCategory,
+  WeatherFeel,
+} from "@/lib/domain";
 
 export type TabId = "home" | "map" | "place" | "report" | "question" | "my";
 
 export type Place = {
   id: string;
   name: string;
-  category: PlaceCategory;
+  category: ReportCategory;
   address: string;
+  latitude: number;
+  longitude: number;
   distance: string;
   status: string;
   summary: string;
-  crowd: CrowdLevel;
+  crowdLevel: CrowdLevel;
   line: string;
   parking: string;
   weather: string;
@@ -32,6 +32,8 @@ export type Place = {
     y: number;
   };
   photos: string[];
+  safetyWarning: string | null;
+  goSignal: "지금 가도 됨" | "애매함" | "비추";
 };
 
 export type FieldOption = {
@@ -40,17 +42,22 @@ export type FieldOption = {
 };
 
 export type ReportDraft = {
-  crowd: string;
-  line: string;
-  parking: string;
-  weather: string;
+  crowdLevel: CrowdLevel;
+  lineStatus: LineStatus | "";
+  parkingStatus: ParkingStatus;
+  weatherFeel: WeatherFeel | "";
   comment: string;
   hasPhoto: boolean;
+  photoPreviewUrl: string | null;
   locationVerified: boolean;
+  clientLocation: {
+    latitude: number;
+    longitude: number;
+  } | null;
 };
 
 export type QuestionDraft = {
-  type: string;
+  type: QuestionType;
   content: string;
   isPhotoRequest: boolean;
 };

@@ -20,6 +20,16 @@
 - 모든 사용자 데이터는 Supabase RLS를 전제로 설계한다.
 - 신고/숨김/삭제 운영이 준비되기 전에는 출시하지 않는다.
 
+## 현재 구현 상태
+
+- 프론트는 `/api/places`, `/api/reports`, `/api/questions`를 호출한다.
+- API는 아직 Supabase가 아니라 서버 목업 저장소를 사용한다.
+- 질문/물어보기권 차감은 클라이언트 잔액을 신뢰하지 않고 서버 목업 원장으로 판단한다.
+- 제보/질문/신고 API에는 기본 rate limit이 들어 있다.
+- 사진 업로드는 파일 input과 서버 검증 seam까지 구현되어 있으며 실제 Storage 저장/이미지 재인코딩은 다음 단계다.
+- 관리자 신고 큐 초안은 `/admin/moderation`에서 확인할 수 있다.
+- 지도는 네이버 지도 JavaScript API v3를 사용하며 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID`에 `ncpKeyId` 값을 넣으면 활성화된다.
+
 ## 개발 명령
 
 ```bash
