@@ -57,7 +57,7 @@ export const mockPlaces: Place[] = [
   },
 ];
 
-const demoNow = new Date("2026-05-08T10:30:00.000Z");
+const demoNow = new Date();
 
 const reports: StoredReport[] = [
   {
@@ -71,6 +71,7 @@ const reports: StoredReport[] = [
     comment: "잔디광장은 여유 있는데 주차장은 조금 붐벼요.",
     photoUrl: "mock://taehwagang-parking",
     verifiedRadiusM: 50,
+    locationVerified: true,
     createdAt: new Date(demoNow.getTime() - 4 * 60 * 1000).toISOString(),
     expiresAt: getReportExpiry(new Date(demoNow.getTime() - 4 * 60 * 1000)).toISOString(),
     flagCount: 0,
@@ -87,6 +88,7 @@ const reports: StoredReport[] = [
     comment: "해변 앞 보행 통로가 막히기 시작했고 공영주차장은 만차예요.",
     photoUrl: "mock://gwangalli-event",
     verifiedRadiusM: 150,
+    locationVerified: true,
     createdAt: new Date(demoNow.getTime() - 8 * 60 * 1000).toISOString(),
     expiresAt: getReportExpiry(new Date(demoNow.getTime() - 8 * 60 * 1000)).toISOString(),
     flagCount: 0,
@@ -103,6 +105,7 @@ const reports: StoredReport[] = [
     comment: "인기 카페는 20분 정도 기다리고 골목 이동은 가능해요.",
     photoUrl: "mock://hwangridan-cafe",
     verifiedRadiusM: 50,
+    locationVerified: true,
     createdAt: new Date(demoNow.getTime() - 12 * 60 * 1000).toISOString(),
     expiresAt: getReportExpiry(new Date(demoNow.getTime() - 12 * 60 * 1000)).toISOString(),
     flagCount: 0,
@@ -119,6 +122,7 @@ const reports: StoredReport[] = [
     comment: "민원 창구 대기는 많지 않고 주차장은 입구 쪽이 붐벼요.",
     photoUrl: null,
     verifiedRadiusM: 150,
+    locationVerified: true,
     createdAt: new Date(demoNow.getTime() - 16 * 60 * 1000).toISOString(),
     expiresAt: getReportExpiry(new Date(demoNow.getTime() - 16 * 60 * 1000)).toISOString(),
     flagCount: 0,
@@ -230,6 +234,7 @@ export function createReport(input: CreateReportInput, options: { actorId?: stri
     comment: input.comment || null,
     photoUrl: sanitizedPhoto ? `mock-storage://${sanitizedPhoto.storagePath}` : input.photoUrl || null,
     verifiedRadiusM,
+    locationVerified: Boolean(verifiedRadiusM),
     createdAt: now.toISOString(),
     expiresAt: getReportExpiry(now).toISOString(),
     flagCount: 0,
@@ -359,6 +364,7 @@ function maskReportForPublic(report: StoredReport) {
     comment: report.comment,
     photoUrl: report.photoUrl,
     verifiedRadiusM: report.verifiedRadiusM,
+    locationVerified: report.locationVerified,
     createdAt: report.createdAt,
     expiresAt: report.expiresAt,
     flagCount: report.flagCount,

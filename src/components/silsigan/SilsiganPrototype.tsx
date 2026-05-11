@@ -32,6 +32,7 @@ import type { Place, QuestionDraft, ReportDraft, TabId } from "./types";
 import { ActionButton, SegmentedControl, StatusPill } from "./ui";
 import { categoryLabels, crowdLabels, lineLabels, parkingLabels, questionTypeLabels, weatherLabels } from "./labels";
 import { NaverMap } from "./NaverMap";
+import { getSupabaseAccessToken } from "@/lib/supabase-browser";
 
 type ApiResponse<T> = {
   success: boolean;
@@ -53,6 +54,7 @@ type PublicReport = {
   comment: string | null;
   photoUrl: string | null;
   verifiedRadiusM: 50 | 150 | 300 | null;
+  locationVerified: boolean;
   createdAt: string;
   expiresAt: string;
   flagCount: number;
@@ -82,6 +84,7 @@ const initialReport: ReportDraft = {
   weatherFeel: "",
   comment: "",
   hasPhoto: false,
+  photoFile: null,
   photoPreviewUrl: null,
   locationVerified: false,
   clientLocation: null,
@@ -206,6 +209,7 @@ export default function SilsiganPrototype() {
 
     setIsSubmitting(true);
     try {
+      const uploadedPhotoPath = reportDraft.photoFile ? await uploadReportPhoto(reportDraft.photoFile) : null;
       const result = await fetchJson<{
         balance: number;
         credits: { amount: number }[];
@@ -219,9 +223,10 @@ export default function SilsiganPrototype() {
           parkingStatus: reportDraft.parkingStatus,
           weatherFeel: reportDraft.weatherFeel || "good",
           comment: reportDraft.comment || undefined,
-          photoMime: reportDraft.hasPhoto ? "image/jpeg" : undefined,
-          photoSizeBytes: reportDraft.hasPhoto ? 128_000 : undefined,
-          photoName: reportDraft.hasPhoto ? "field-report.jpg" : undefined,
+          photoPath: uploadedPhotoPath ?? undefined,
+          photoMime: reportDraft.hasPhoto && !uploadedPhotoPath ? reportDraft.photoFile?.type ?? "image/jpeg" : undefined,
+          photoSizeBytes: reportDraft.hasPhoto && !uploadedPhotoPath ? reportDraft.photoFile?.size ?? 128_000 : undefined,
+          photoName: reportDraft.hasPhoto && !uploadedPhotoPath ? "field-report.jpg" : undefined,
           clientLocation: reportDraft.clientLocation ?? undefined,
         }),
       });
@@ -263,7 +268,7 @@ export default function SilsiganPrototype() {
       const cost = questionType === "photo_request" ? 2 : 1;
       setAskCredits(result.balance);
       setQuestionsSubmitted((current) => current + 1);
-      setToast(`물어보기가 등록되었습니다. 물어보기권 ${cost}개가 차감되었습니다.`);
+      setToast(`근처 사용자에게 물어보는 중입니다. 물어보기권 ${cost}개가 차감되었습니다.`);
       setQuestionDraft(initialQuestion);
       setActiveTab("place");
       await loadData();
@@ -311,9 +316,10 @@ export default function SilsiganPrototype() {
     setReportDraft((current) => ({
       ...current,
       hasPhoto: true,
+      photoFile: file,
       photoPreviewUrl: URL.createObjectURL(file),
     }));
-      setToast("사진이 선택되었습니다. 사진 속 위치정보와 개인정보를 안전하게 정리합니다.");
+    setToast("사진이 선택되었습니다. 사진 속 위치정보와 개인정보를 안전하게 정리합니다.");
   };
 
   return (
@@ -330,11 +336,12 @@ export default function SilsiganPrototype() {
                   places={places}
                   questions={questions}
                   reports={reports}
+                  onGoMap={() => setActiveTab("map")}
                   onGoReport={() => setActiveTab("report")}
                   onSelectPlace={selectPlace}
                 />
               )}
-              {activeTab === "map" && <MapScreen places={places} onSelectPlace={selectPlace} />}
+              {activeTab === "map" && <MapScreen places={places} reports={reports} onSelectPlace={selectPlace} />}
               {activeTab === "place" && selectedPlace && (
                 <PlaceScreen
                   flagged={flagged}
@@ -407,12 +414,14 @@ function HomeScreen({
   places,
   questions,
   reports,
+  onGoMap,
   onGoReport,
   onSelectPlace,
 }: {
   places: Place[];
   questions: PublicQuestion[];
   reports: PublicReport[];
+  onGoMap: () => void;
   onGoReport: () => void;
   onSelectPlace: (place: Place) => void;
 }) {
@@ -428,19 +437,6 @@ function HomeScreen({
         <Search size={20} />
         <input placeholder="지금 어디가 궁금하세요?" type="search" />
       </label>
-
-      <section className="hero-map">
-        <NaverMap compact places={places} onSelectPlace={onSelectPlace} />
-        <div>
-          <p className="eyebrow">내 주변 실시간 제보</p>
-          <h2>지금 가도 될까?</h2>
-          <p>방금 올라온 사진, 현장 인증, 만료 시간을 함께 보여줍니다.</p>
-        </div>
-        <button className="map-locate" onClick={onGoReport} type="button">
-          <LocateFixed size={18} />
-          지금 상황 알려주기
-        </button>
-      </section>
 
       <section className="section-block">
         <div className="section-title">
@@ -481,8 +477,25 @@ function HomeScreen({
         </div>
       </section>
 
-      <QuickStats />
       <AnswerableQuestions questions={questions} places={places} onSelectPlace={onSelectPlace} />
+      <section className="home-map-teaser">
+        <div>
+          <p className="eyebrow">내주변 지도</p>
+          <h2>지도는 필터로 빠르게 확인하세요</h2>
+          <p>주차, 줄, 혼잡, 한산, 사진 있는 제보만 골라 볼 수 있습니다.</p>
+        </div>
+        <div className="teaser-actions">
+          <button onClick={onGoMap} type="button">
+            <LocateFixed size={18} />
+            지도 보기
+          </button>
+          <button onClick={onGoReport} type="button">
+            <Camera size={18} />
+            올리기
+          </button>
+        </div>
+      </section>
+      <QuickStats />
       <PlaceCarousel title="지금 물어본 곳" places={places} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 혼잡한 곳" places={busyPlaces} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 한산한 곳" places={calmPlaces} onSelectPlace={onSelectPlace} />
@@ -595,19 +608,62 @@ function PlaceCarousel({
   );
 }
 
-function MapScreen({ places, onSelectPlace }: { places: Place[]; onSelectPlace: (place: Place) => void }) {
+function MapScreen({
+  places,
+  reports,
+  onSelectPlace,
+}: {
+  places: Place[];
+  reports: PublicReport[];
+  onSelectPlace: (place: Place) => void;
+}) {
+  const [mapFilter, setMapFilter] = useState("all");
+  const filteredPlaces = places.filter((place) => {
+    const latest = reports.find((report) => report.placeId === place.id);
+
+    if (mapFilter === "parking") {
+      return latest?.parkingStatus === "full";
+    }
+
+    if (mapFilter === "line") {
+      return latest?.lineStatus === "long";
+    }
+
+    if (mapFilter === "busy") {
+      return latest?.crowdLevel === "busy" || latest?.crowdLevel === "packed";
+    }
+
+    if (mapFilter === "quiet") {
+      return latest?.crowdLevel === "quiet" || latest?.crowdLevel === "normal";
+    }
+
+    if (mapFilter === "photo") {
+      return Boolean(latest?.photoUrl);
+    }
+
+    return true;
+  });
+
   return (
     <div className="screen-stack">
       <section className="full-map" aria-label="주변 제보 지도">
-        <NaverMap places={places} onSelectPlace={onSelectPlace} />
+        <NaverMap places={filteredPlaces} onSelectPlace={onSelectPlace} />
       </section>
-      <section className="legend-row" aria-label="혼잡도 범례">
-        <StatusPill level="quiet" />
-        <StatusPill level="normal" />
-        <StatusPill level="busy" />
-        <StatusPill level="packed" />
+      <section className="map-filter-row" aria-label="지도 필터">
+        {[
+          ["all", "전체"],
+          ["parking", "주차"],
+          ["line", "줄"],
+          ["busy", "혼잡"],
+          ["quiet", "한산"],
+          ["photo", "사진 있음"],
+        ].map(([id, label]) => (
+          <button aria-pressed={mapFilter === id} key={id} onClick={() => setMapFilter(id)} type="button">
+            {label}
+          </button>
+        ))}
       </section>
-      <PlaceCarousel title="내 주변 장소" places={places} onSelectPlace={onSelectPlace} />
+      <PlaceCarousel title="내 주변 장소" places={filteredPlaces} onSelectPlace={onSelectPlace} />
     </div>
   );
 }
@@ -630,6 +686,9 @@ function PlaceScreen({
   reports: PublicReport[];
 }) {
   const isSensitive = place.category === "hospital" || place.category === "public_office";
+  const verifiedReports = reports.filter((report) => report.locationVerified);
+  const unverifiedReports = reports.filter((report) => !report.locationVerified);
+  const lastVerifiedReport = verifiedReports[0];
 
   return (
     <div className="screen-stack">
@@ -644,7 +703,9 @@ function PlaceScreen({
           <span>줄 {place.line}</span>
           <span>주차 {place.parking}</span>
           <span>날씨 {place.weather}</span>
-          <span>{place.updatedAt}</span>
+          <span>마지막 현장 인증 {lastVerifiedReport ? minutesAgo(lastVerifiedReport.createdAt) : "없음"}</span>
+          <span>최근 3시간 제보 {reports.length}건</span>
+          <span>인증 없는 제보 {unverifiedReports.length}건</span>
         </div>
       </section>
 
@@ -663,6 +724,10 @@ function PlaceScreen({
               <small>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · {report.photoUrl ? "사진 있음" : "사진 없음"}</small>
             </div>
           ))}
+        </div>
+        <div className="report-trust-grid">
+          <ReportTrustGroup title="현장 인증 제보" reports={verifiedReports} />
+          <ReportTrustGroup title="인증 없는 제보" reports={unverifiedReports} />
         </div>
       </section>
 
@@ -718,6 +783,45 @@ function SensitiveWarning() {
   );
 }
 
+function ReportTrustGroup({ title, reports }: { title: string; reports: PublicReport[] }) {
+  return (
+    <div className="report-trust-group">
+      <strong>{title}</strong>
+      {reports.length === 0 ? (
+        <span>아직 없습니다</span>
+      ) : (
+        reports.slice(0, 2).map((report) => (
+          <p key={report.id}>
+            {report.comment ?? "현장 상태 제보"} · {minutesAgo(report.createdAt)}
+          </p>
+        ))
+      )}
+    </div>
+  );
+}
+
+function PhotoUploadButton({
+  draft,
+  fileInputRef,
+  isSensitive,
+}: {
+  draft: ReportDraft;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  isSensitive: boolean;
+}) {
+  return (
+    <button className={`upload-box ${isSensitive ? "upload-box--caution" : ""}`} onClick={() => fileInputRef.current?.click()} type="button">
+      {draft.photoPreviewUrl ? <span className="photo-preview-dot" /> : <Upload size={24} />}
+      <strong>{draft.hasPhoto ? "사진 선택됨" : isSensitive ? "외부/주차장 사진만 선택" : "사진 추가"}</strong>
+      <span>
+        {isSensitive
+          ? "사진은 선택이에요. 얼굴, 접수번호, 서류, 진료정보가 보이는 내부 사진은 올릴 수 없습니다."
+          : "JPG, PNG, WebP 사진을 올릴 수 있어요. 사진 속 위치정보와 개인정보는 보이지 않게 정리합니다."}
+      </span>
+    </button>
+  );
+}
+
 function ReportScreen({
   draft,
   fileInputRef,
@@ -754,15 +858,7 @@ function ReportScreen({
         ref={fileInputRef}
         type="file"
       />
-      <button className={`upload-box ${isSensitive ? "upload-box--caution" : ""}`} onClick={() => fileInputRef.current?.click()} type="button">
-        {draft.photoPreviewUrl ? <span className="photo-preview-dot" /> : <Upload size={24} />}
-        <strong>{draft.hasPhoto ? "사진 선택됨" : isSensitive ? "외부/주차장 사진만 선택" : "사진 추가"}</strong>
-        <span>
-          {isSensitive
-            ? "사진은 선택이에요. 얼굴, 접수번호, 서류, 진료정보가 보이는 내부 사진은 올릴 수 없습니다."
-            : "JPG, PNG, WebP 사진을 올릴 수 있어요. 사진 속 위치정보와 개인정보는 보이지 않게 정리합니다."}
-        </span>
-      </button>
+      {!isSensitive && <PhotoUploadButton draft={draft} fileInputRef={fileInputRef} isSensitive={isSensitive} />}
       <SegmentedControl
         label="사람"
         onChange={(crowdLevel) => onChange({ ...draft, crowdLevel: crowdLevel as CrowdLevel })}
@@ -775,6 +871,7 @@ function ReportScreen({
         options={parkingOptions}
         value={draft.parkingStatus}
       />
+      {isSensitive && <PhotoUploadButton draft={draft} fileInputRef={fileInputRef} isSensitive={isSensitive} />}
       <details className="optional-fields">
         <summary>줄/날씨 선택 입력</summary>
         <SegmentedControl
@@ -816,6 +913,7 @@ function ReportScreen({
         </ActionButton>
       ) : (
         <div className="location-actions">
+          <p className="unverified-policy">인증 없이 올리면 낮은 신뢰도로 표시되고 물어보기권 보상은 없습니다.</p>
           <ActionButton disabled={isSubmitting} onClick={onRequestLocation} type="button" variant="secondary">
             현장 인증 다시 시도
           </ActionButton>
@@ -861,7 +959,7 @@ function QuestionScreen({
         </div>
       </div>
       <div className="example-chips" aria-label="예시 질문">
-        {["지금 줄 긴가요?", "주차 자리 있나요?", "비 많이 오나요?"].map((example) => (
+        {["지금 주차 가능해요?", "줄 얼마나 길어요?", "사람 너무 많나요?", "사진 한 장 가능할까요?", "대기 얼마나 걸려요?"].map((example) => (
           <button key={example} onClick={() => onChange({ ...draft, content: example })} type="button">
             {example}
           </button>
@@ -936,12 +1034,30 @@ function MyScreen({
           <strong>{questionsSubmitted}</strong>
           <span>내 물어보기</span>
         </div>
+        <div>
+          <BadgeCheck size={22} />
+          <strong>0</strong>
+          <span>내가 답한 질문</span>
+        </div>
+        <div>
+          <ShieldAlert size={22} />
+          <strong>0</strong>
+          <span>신고/삭제된 제보</span>
+        </div>
+        <div>
+          <ShieldCheck size={22} />
+          <strong>{trustScore}</strong>
+          <span>신뢰도</span>
+        </div>
       </section>
       <section className="policy-list">
         <h2>안전 정책</h2>
         <p>정확한 내 위치는 공개하지 않고 현장 인증 여부만 보여줍니다.</p>
         <p>사진 속 위치정보와 원본 파일명은 보이지 않게 정리합니다.</p>
         <p>허위 확정 신고는 신뢰 점수와 물어보기권 차감에 반영됩니다.</p>
+        <a href="/terms">약관</a>
+        <a href="/privacy">개인정보 처리방침</a>
+        <a href="/account/delete">계정 삭제</a>
       </section>
     </div>
   );
@@ -979,13 +1095,40 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   );
 }
 
+async function uploadReportPhoto(file: File) {
+  const accessToken = await getSupabaseAccessToken();
+
+  if (!accessToken) {
+    return null;
+  }
+
+  const formData = new FormData();
+  formData.append("photo", file);
+
+  const result = await fetchJson<{ photoPath: string }>("/api/report-photos", {
+    method: "POST",
+    body: formData,
+  });
+
+  return result.photoPath;
+}
+
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  const isFormData = init?.body instanceof FormData;
+  const accessToken = await getSupabaseAccessToken();
+
+  if (!isFormData && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
+  if (accessToken && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${accessToken}`);
+  }
+
   const response = await fetch(input, {
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
     ...init,
+    headers,
   });
   const payload = (await response.json()) as ApiResponse<T>;
 

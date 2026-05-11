@@ -41,6 +41,38 @@ test("domain enum literals match Supabase migration enum literals", async () => 
   assert.deepEqual(parseSqlEnum(sql, "question_type"), [...questionTypes]);
 });
 
+test("beta Supabase migration allows unverified reports and adds RPC transactions", async () => {
+  const sql = await readFile(
+    new URL("../supabase/migrations/20260512090000_beta_supabase_backend.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(sql, /add column if not exists location_verified boolean not null default false/);
+  assert.match(sql, /alter column verified_radius_m drop not null/);
+  assert.match(sql, /verified_radius_m is null or verified_radius_m in \(50, 150, 300\)/);
+  assert.match(sql, /create or replace function public\.create_question_with_credit/);
+  assert.match(sql, /create or replace function public\.create_report_with_credits/);
+  assert.match(sql, /INSUFFICIENT_CREDITS/);
+  assert.match(sql, /insert into storage\.buckets/);
+});
+
+test("beta Supabase migration protects report rewards and private photos", async () => {
+  const sql = await readFile(
+    new URL("../supabase/migrations/20260512090000_beta_supabase_backend.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(sql, /update public\.reports\s+set location_verified = true\s+where verified_radius_m is not null/i);
+  assert.match(sql, /create table if not exists public\.report_photo_uploads/i);
+  assert.match(sql, /public\s+=\s+false/i);
+  assert.match(sql, /revoke execute on function public\.create_report_with_credits/i);
+  assert.doesNotMatch(sql, /grant execute on function public\.create_report_with_credits[\s\S]+to authenticated/i);
+  assert.match(sql, /grant execute on function public\.create_report_with_credits[\s\S]+to service_role/i);
+  assert.match(sql, /p_user_id uuid/i);
+  assert.match(sql, /PHOTO_UPLOAD_NOT_FOUND/i);
+  assert.match(sql, /pg_advisory_xact_lock/i);
+});
+
 function parseSqlEnum(sql: string, enumName: string) {
   const match = new RegExp(`create type public\\.${enumName} as enum \\(([^;]+)\\);`).exec(sql);
   assert.ok(match, `Missing enum ${enumName}`);

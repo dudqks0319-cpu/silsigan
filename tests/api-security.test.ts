@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const { createQuestion, createReport, listPublicReports } = await import(
@@ -7,6 +8,7 @@ const { createQuestion, createReport, listPublicReports } = await import(
 const { validatePhotoUpload, sanitizePhotoUpload } = await import(
   new URL("../src/lib/photo-validation.ts", import.meta.url).href
 );
+const { validateStoredPhotoPath } = await import(new URL("../src/lib/photo-validation.ts", import.meta.url).href);
 const { checkRateLimit, resetRateLimits } = await import(new URL("../src/lib/rate-limit.ts", import.meta.url).href);
 const { assertAdminTokenHeader, isAdminCookieAuthorized } = await import(
   new URL("../src/lib/admin-auth.ts", import.meta.url).href
@@ -180,5 +182,29 @@ test("photo sanitization strips EXIF intent and removes original filename", () =
 
   assert.equal(sanitized.metadata.exifRemoved, true);
   assert.equal(sanitized.metadata.gpsRemoved, true);
+  assert.equal(sanitized.metadata.reencoded, false);
   assert.equal(sanitized.storagePath.includes("hospital-gps-user-name"), false);
+});
+
+test("stored photo paths must use sanitized UUID jpg paths", () => {
+  assert.doesNotThrow(() => validateStoredPhotoPath("reports/11111111-1111-4111-8111-111111111111.jpg"));
+  assert.throws(
+    () => validateStoredPhotoPath("reports/hospital-gps-user-name.jpg"),
+    (error: unknown) => (error as { code?: string }).code === "INVALID_PHOTO_PATH",
+  );
+});
+
+test("browser Supabase helper does not reuse a permanently cached access token", async () => {
+  const source = await readFile(new URL("../src/lib/supabase-browser.ts", import.meta.url), "utf8");
+
+  assert.equal(source.includes("accessTokenPromise"), false);
+  assert.match(source, /getSession\(\)/);
+  assert.match(source, /signInAnonymously\(\)/);
+});
+
+test("photo upload route creates a profile before writing upload ownership", async () => {
+  const source = await readFile(new URL("../src/app/api/report-photos/route.ts", import.meta.url), "utf8");
+
+  assert.match(source, /ensureProfile\(userId\)/);
+  assert.ok(source.indexOf("ensureProfile(userId)") < source.indexOf("report_photo_uploads"));
 });

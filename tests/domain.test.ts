@@ -47,6 +47,16 @@ test("credit balance supports signup, reports, answers, questions, and false-rep
   assert.equal(balance, 1);
 });
 
+test("unverified photo reports do not earn credits", () => {
+  assert.deepEqual(creditEventsForReport(false, true), []);
+  assert.deepEqual(creditEventsForReport(false, false), []);
+  assert.deepEqual(creditEventsForReport(true, false), [{ type: "verified_report", amount: 1 }]);
+  assert.deepEqual(creditEventsForReport(true, true), [
+    { type: "verified_report", amount: 1 },
+    { type: "photo_report", amount: 1 },
+  ]);
+});
+
 test("sensitive categories return upload warnings", () => {
   assert.match(getCategorySafetyWarning("hospital") ?? "", /환자 얼굴/);
   assert.match(getCategorySafetyWarning("public_office") ?? "", /서류/);
@@ -99,7 +109,7 @@ test("report creation returns a coarse radius and does not persist client coordi
   assert.equal("longitude" in result.report, false);
 });
 
-test("report creation can publish without field verification when location is absent", () => {
+test("report creation can publish without field verification but earns no credits", () => {
   const result = createReport({
     placeId: "gyeongju-hwangridan",
     category: "restaurant_cafe",
@@ -116,10 +126,11 @@ test("report creation can publish without field verification when location is ab
   const earned = result.credits.reduce((sum: number, event: { amount: number }) => sum + Math.max(event.amount, 0), 0);
 
   assert.equal(result.report.verifiedRadiusM, null);
+  assert.equal(result.report.locationVerified, false);
   assert.equal("clientLocation" in result.report, false);
   assert.equal("latitude" in result.report, false);
   assert.equal("longitude" in result.report, false);
-  assert.equal(earned, 1);
+  assert.equal(earned, 0);
   assert.match(result.privacyNotice, /현장 인증 없이/);
 });
 

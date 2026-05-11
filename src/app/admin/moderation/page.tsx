@@ -1,13 +1,13 @@
 import { Flag, ShieldAlert } from "lucide-react";
 import { cookies } from "next/headers";
 import { isAdminCookieAuthorized } from "@/lib/admin-auth";
-import { getModerationQueue } from "@/lib/mock-store";
+import { getModerationQueue } from "@/lib/store";
 
 export default async function ModerationPage() {
   const adminToken = process.env.ADMIN_MODERATION_TOKEN;
   const cookieStore = await cookies();
   const isAuthorized = isAdminCookieAuthorized(cookieStore.get("silsigan_admin_token")?.value, adminToken);
-  const queue = isAuthorized ? getModerationQueue() : [];
+  const queue = isAuthorized ? await getModerationQueue() : [];
 
   return (
     <main className="admin-shell">

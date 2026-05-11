@@ -48,6 +48,7 @@ export type ReportDraft = {
   weatherFeel: WeatherFeel | "";
   comment: string;
   hasPhoto: boolean;
+  photoFile: File | null;
   photoPreviewUrl: string | null;
   locationVerified: boolean;
   clientLocation: {

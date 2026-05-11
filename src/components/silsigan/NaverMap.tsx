@@ -100,12 +100,13 @@ export function NaverMap({ places, compact = false, onSelectPlace }: NaverMapPro
       zoomControl: !compact,
     });
     const markers = places.map((place) => {
+      const markerLabel = markerLabelForPlace(place);
       const marker = new maps.Marker({
         position: new maps.LatLng(place.latitude, place.longitude),
         map,
         title: place.name,
         icon: {
-          content: `<button class="naver-marker naver-marker--${place.crowdLevel}" aria-label="${place.name}">${place.status}</button>`,
+          content: `<button class="naver-marker naver-marker--${place.crowdLevel}" aria-label="${place.name}">${markerLabel}</button>`,
           size: new maps.Size(58, 34),
           anchor: new maps.Point(29, 17),
         },
@@ -141,4 +142,24 @@ function getMapCenter(places: Place[]) {
     latitude: places.reduce((sum, place) => sum + place.latitude, 0) / places.length,
     longitude: places.reduce((sum, place) => sum + place.longitude, 0) / places.length,
   };
+}
+
+function markerLabelForPlace(place: Place) {
+  if (place.parking === "만차") {
+    return "주차 만차";
+  }
+
+  if (place.line === "김") {
+    return "줄 김";
+  }
+
+  if (place.crowdLevel === "quiet") {
+    return "한산";
+  }
+
+  if (place.crowdLevel === "busy" || place.crowdLevel === "packed") {
+    return "혼잡";
+  }
+
+  return place.status;
 }

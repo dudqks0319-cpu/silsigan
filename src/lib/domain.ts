@@ -77,6 +77,7 @@ export type StoredReport = {
   comment: string | null;
   photoUrl: string | null;
   verifiedRadiusM: VerifiedRadiusM | null;
+  locationVerified: boolean;
   createdAt: string;
   expiresAt: string;
   flagCount: number;
@@ -134,10 +135,10 @@ export function creditEventsForReport(hasVerifiedLocation: boolean, hasPhoto: bo
 
   if (hasVerifiedLocation) {
     events.push({ type: "verified_report", amount: 1 });
-  }
 
-  if (hasPhoto) {
-    events.push({ type: "photo_report", amount: 1 });
+    if (hasPhoto) {
+      events.push({ type: "photo_report", amount: 1 });
+    }
   }
 
   return events;
