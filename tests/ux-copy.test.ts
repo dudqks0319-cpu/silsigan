@@ -33,6 +33,29 @@ test("map filters and answer CTA use Korean beta copy", async () => {
   assert.match(source, /answerQuestionId/);
 });
 
+test("home prioritizes search, live photos, status reports, and internal popular places", async () => {
+  const source = await readFile(new URL("../src/components/silsigan/SilsiganPrototype.tsx", import.meta.url), "utf8");
+
+  for (const label of ["추천 검색어", "방금 올라온 현장", "사진 없는 상태 제보", "지금 많이 확인하는 곳"]) {
+    assert.match(source, new RegExp(label));
+  }
+
+  assert.match(source, /search-suggestion-row/);
+  assert.match(source, /status-report-card/);
+  assert.match(source, /getPopularPlaces/);
+});
+
+test("place detail exposes navigation intent and answer completion feedback", async () => {
+  const source = await readFile(new URL("../src/components/silsigan/SilsiganPrototype.tsx", import.meta.url), "utf8");
+
+  for (const label of ["카카오내비로 길찾기", "티맵으로 길찾기", "질문자에게 전달됐습니다"]) {
+    assert.match(source, new RegExp(label));
+  }
+
+  assert.match(source, /navigationIntentByPlaceId/);
+  assert.match(source, /nav-cta-card/);
+});
+
 test("first-use consent modal covers terms, privacy, location, and photo policy", async () => {
   const source = await readFile(new URL("../src/components/silsigan/SilsiganPrototype.tsx", import.meta.url), "utf8");
 

@@ -508,9 +508,12 @@ img {
 .question-preview,
 .policy-list,
 .live-feed,
+.status-report-list,
 .answer-list,
+.popular-place-list,
 .report-trust-grid,
 .trust-metrics-card,
+.nav-cta-card,
 .reward-policy-card {
   display: grid;
   gap: 10px;
@@ -544,9 +547,12 @@ img {
 .live-card,
 .featured-live-card,
 .answer-card,
+.status-report-card,
+.popular-place-card,
 .home-map-teaser,
 .detail-hero,
 .trust-metrics-card,
+.nav-cta-card,
 .form-hero,
 .profile-card,
 .question-preview article,
@@ -567,7 +573,9 @@ img {
 .place-card,
 .live-card,
 .featured-live-card,
-.answer-card {
+.answer-card,
+.status-report-card,
+.popular-place-card {
   display: grid;
   gap: 12px;
   width: 100%;
@@ -592,6 +600,16 @@ img {
 
 .answer-card {
   grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.status-report-card {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.popular-place-card {
+  grid-template-columns: auto 1fr auto;
   align-items: center;
 }
 
@@ -646,6 +664,8 @@ img {
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.58)),
     linear-gradient(135deg, #58b8a8, #5967d8);
+  background-position: center;
+  background-size: cover;
   border-radius: 16px;
 }
 
@@ -674,6 +694,98 @@ img {
   display: grid;
   gap: 14px;
   padding: 16px;
+}
+
+.search-suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 0 2px;
+}
+
+.search-suggestion-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.search-suggestion-row button {
+  min-height: 34px;
+  padding: 0 11px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.search-suggestion-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.status-report-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  background: #f8fafc;
+  border-radius: 16px;
+}
+
+.status-report-icon--quiet {
+  background: #e8f8ef;
+}
+
+.status-report-icon--normal {
+  background: #fff6dd;
+}
+
+.status-report-icon--busy {
+  background: #fff0e7;
+}
+
+.status-report-icon--packed {
+  background: #feecec;
+}
+
+.status-report-card p,
+.popular-place-card p {
+  margin: 5px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.state-chip-row,
+.popular-signal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.state-chip-row span,
+.popular-signal-row span {
+  padding: 6px 8px;
+  color: #344054;
+  background: #f2f4f7;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.popular-rank {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .home-map-teaser h2 {
@@ -853,6 +965,43 @@ img {
   font-size: 17px;
 }
 
+.nav-cta-card {
+  padding: 14px;
+}
+
+.nav-cta-card strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 16px;
+}
+
+.nav-cta-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.nav-cta-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.nav-cta-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 10px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .detail-hero h2,
 .form-hero h2,
 .profile-card h2 {
@@ -861,12 +1010,36 @@ img {
   line-height: 1.1;
 }
 
-.detail-summary {
+.detail-summary,
+.decision-card {
   margin-top: 14px;
   padding: 14px;
   background: #f8fafc;
   border-radius: 16px;
   font-weight: 800;
+}
+
+.decision-card {
+  display: grid;
+  gap: 6px;
+}
+
+.decision-card span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.decision-card strong {
+  font-size: 17px;
+}
+
+.decision-card p {
+  margin: 0;
+  color: #344054;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 700;
 }
 
 .go-signal {

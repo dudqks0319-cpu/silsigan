@@ -9,6 +9,7 @@ import {
   Flag,
   LocateFixed,
   MessageCircleQuestion,
+  Navigation,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -72,6 +73,23 @@ type PublicQuestion = {
 };
 
 type ConsentAction = "photo" | "location" | "report" | "question" | "flag";
+type NavigationProvider = "kakao" | "tmap";
+type NavigationIntentCounts = Record<string, number>;
+
+type PopularPlace = {
+  place: Place;
+  score: number;
+  reportCount: number;
+  pendingQuestionCount: number;
+  photoReportCount: number;
+  navigationIntentCount: number;
+  reason: string;
+};
+
+type SearchSuggestion = {
+  label: string;
+  placeId: string;
+};
 
 const presentationByPlaceId: Record<string, Pick<Place, "distance" | "coordinates" | "goSignal">> = {
   "ulsan-taehwagang": { distance: "1.2km", coordinates: { x: 28, y: 42 }, goSignal: "제보 기준 괜찮음" },
@@ -103,6 +121,13 @@ const initialQuestion: QuestionDraft = {
 
 const policyConsentKey = ["silsigan", "policy", "consent", "v1"].join("_");
 
+const searchSuggestions: SearchSuggestion[] = [
+  { label: "울산 태화강", placeId: "ulsan-taehwagang" },
+  { label: "광안리 주차", placeId: "busan-gwangalli" },
+  { label: "황리단길 줄", placeId: "gyeongju-hwangridan" },
+  { label: "시청 민원 대기", placeId: "ulsan-city-hall" },
+];
+
 export default function SilsiganPrototype() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const [places, setPlaces] = useState<Place[]>([]);
@@ -115,6 +140,8 @@ export default function SilsiganPrototype() {
   const [trustScore, setTrustScore] = useState(86);
   const [reportsSubmitted, setReportsSubmitted] = useState(2);
   const [questionsSubmitted, setQuestionsSubmitted] = useState(1);
+  const [answersSubmitted, setAnswersSubmitted] = useState(0);
+  const [navigationIntentByPlaceId, setNavigationIntentByPlaceId] = useState<NavigationIntentCounts>({});
   const [flagged, setFlagged] = useState(false);
   const [toast, setToast] = useState("현장 인증 제보를 올리면 물어보기권을 받을 수 있어요.");
   const [loading, setLoading] = useState(true);
@@ -298,9 +325,12 @@ export default function SilsiganPrototype() {
       setAskCredits(result.balance);
       setTrustScore((current) => Math.min(current + (reportDraft.locationVerified ? 3 : 1), 99));
       setReportsSubmitted((current) => current + 1);
+      if (reportDraft.answerQuestionId) {
+        setAnswersSubmitted((current) => current + 1);
+      }
       setToast(
         reportDraft.answerQuestionId
-          ? `답변 완료! 물어보기권 +${earned}를 받았어요.`
+          ? `답변 완료! 질문자에게 전달됐습니다. 물어보기권 +${earned}를 받았어요.`
           : reportDraft.locationVerified
           ? `지금 상황이 올라갔습니다. 물어보기권 +${earned}, 3시간 후 자동 만료됩니다.`
           : `인증 없이 올라갔습니다. ${earned > 0 ? `물어보기권 +${earned}, ` : ""}현장 인증 없음으로 표시됩니다.`,
@@ -412,6 +442,17 @@ export default function SilsiganPrototype() {
     setActiveTab("report");
   };
 
+  const openNavigationIntent = (provider: NavigationProvider, place: Place) => {
+    const providerLabel = provider === "kakao" ? "카카오내비" : "티맵";
+
+    setNavigationIntentByPlaceId((current) => ({
+      ...current,
+      [place.id]: (current[place.id] ?? 0) + 1,
+    }));
+    window.open(navigationUrlForPlace(provider, place), "_blank", "noopener,noreferrer");
+    setToast(`${providerLabel} 길찾기를 열었습니다. 이 관심도는 지금 많이 확인하는 곳에 반영됩니다.`);
+  };
+
   const handlePhotoChange = (file: File | null) => {
     if (!file) {
       return;
@@ -445,6 +486,7 @@ export default function SilsiganPrototype() {
                   places={places}
                   questions={questions}
                   reports={reports}
+                  navigationIntentByPlaceId={navigationIntentByPlaceId}
                   onGoMap={() => setActiveTab("map")}
                   onGoReport={() => setActiveTab("report")}
                   onAnswerQuestion={answerQuestion}
@@ -459,6 +501,7 @@ export default function SilsiganPrototype() {
                   onAnswerQuestion={answerQuestion}
                   onGoQuestion={() => setActiveTab("question")}
                   onGoReport={() => setActiveTab("report")}
+                  onNavigateIntent={openNavigationIntent}
                   place={selectedPlace}
                   questions={selectedQuestions}
                   reports={selectedReports}
@@ -490,6 +533,7 @@ export default function SilsiganPrototype() {
               {activeTab === "my" && (
                 <MyScreen
                   askCredits={askCredits}
+                  answersSubmitted={answersSubmitted}
                   questionsSubmitted={questionsSubmitted}
                   reportsSubmitted={reportsSubmitted}
                   trustScore={trustScore}
@@ -533,6 +577,7 @@ function HomeScreen({
   places,
   questions,
   reports,
+  navigationIntentByPlaceId,
   onGoMap,
   onGoReport,
   onAnswerQuestion,
@@ -541,6 +586,7 @@ function HomeScreen({
   places: Place[];
   questions: PublicQuestion[];
   reports: PublicReport[];
+  navigationIntentByPlaceId: NavigationIntentCounts;
   onGoMap: () => void;
   onGoReport: () => void;
   onAnswerQuestion: (question: PublicQuestion) => void;
@@ -548,9 +594,12 @@ function HomeScreen({
 }) {
   const calmPlaces = places.filter((place) => place.crowdLevel === "quiet" || place.crowdLevel === "normal");
   const busyPlaces = places.filter((place) => place.crowdLevel === "busy" || place.crowdLevel === "packed");
-  const recentReports = reports.slice(0, 3);
-  const featuredReport = recentReports[0];
+  const recentReports = getRecentReports(reports, 8);
+  const photoReports = recentReports.filter((report) => Boolean(report.photoUrl));
+  const statusReports = recentReports.filter((report) => !report.photoUrl).slice(0, 3);
+  const featuredReport = photoReports[0];
   const featuredPlace = featuredReport ? places.find((candidate) => candidate.id === featuredReport.placeId) : null;
+  const popularPlaces = getPopularPlaces(places, reports, questions, navigationIntentByPlaceId).slice(0, 4);
 
   return (
     <div className="screen-stack">
@@ -558,6 +607,18 @@ function HomeScreen({
         <Search size={20} />
         <input placeholder="지금 어디가 궁금하세요?" type="search" />
       </label>
+      <div className="search-suggestion-row" aria-label="추천 검색어">
+        <span>추천 검색어</span>
+        {searchSuggestions.map((suggestion) => {
+          const place = places.find((candidate) => candidate.id === suggestion.placeId);
+
+          return (
+            <button disabled={!place} key={suggestion.placeId} onClick={() => place && onSelectPlace(place)} type="button">
+              {suggestion.label}
+            </button>
+          );
+        })}
+      </div>
 
       <section className="section-block">
         <div className="section-title">
@@ -566,31 +627,31 @@ function HomeScreen({
         </div>
         {featuredReport && featuredPlace && (
           <button className="featured-live-card" onClick={() => onSelectPlace(featuredPlace)} type="button">
-            <div className="featured-live-photo">
-              <Camera size={28} />
+            <div className="featured-live-photo" style={photoBackgroundStyle(featuredReport.photoUrl)}>
+              {!isRenderablePhotoUrl(featuredReport.photoUrl) && <Camera size={28} />}
               <span>{verificationLabel(featuredReport)}</span>
             </div>
             <div>
               <strong>{featuredPlace.name}</strong>
               <p>{featuredReport.comment ?? "현장 상태가 업데이트됐습니다."}</p>
               <span>
-                {minutesAgo(featuredReport.createdAt)} · {featuredReport.photoUrl ? "사진 있음" : "사진 없음"}
+                {minutesAgo(featuredReport.createdAt)} · 현장 사진 · {crowdLabels[featuredReport.crowdLevel]}
               </span>
             </div>
           </button>
         )}
         <div className="live-feed">
-          {recentReports.slice(featuredReport ? 1 : 0).map((report) => {
+          {photoReports.slice(featuredReport ? 1 : 0, 3).map((report) => {
             const place = places.find((candidate) => candidate.id === report.placeId);
             return (
               <button className="live-card" key={report.id} onClick={() => place && onSelectPlace(place)} type="button">
-                <div className="live-thumb">
-                  <Camera size={20} />
+                <div className="live-thumb" style={photoBackgroundStyle(report.photoUrl)}>
+                  {!isRenderablePhotoUrl(report.photoUrl) && <Camera size={20} />}
                 </div>
                 <div>
                   <strong>{place?.name ?? "현장"}</strong>
                   <p>{report.comment ?? "현장 상태가 업데이트됐습니다."}</p>
-                  <span>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · {report.photoUrl ? "사진 있음" : "사진 없음"}</span>
+                  <span>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · 현장 사진</span>
                 </div>
               </button>
             );
@@ -598,6 +659,25 @@ function HomeScreen({
         </div>
       </section>
 
+      {statusReports.length > 0 && (
+        <section className="section-block">
+          <div className="section-title">
+            <h2>사진 없는 상태 제보</h2>
+            <span>상태만 빠르게</span>
+          </div>
+          <div className="status-report-list">
+            {statusReports.map((report) => {
+              const place = places.find((candidate) => candidate.id === report.placeId);
+
+              return place ? (
+                <StatusReportCard key={report.id} onSelectPlace={onSelectPlace} place={place} report={report} />
+              ) : null;
+            })}
+          </div>
+        </section>
+      )}
+
+      <PopularPlaces items={popularPlaces} onSelectPlace={onSelectPlace} />
       <AnswerableQuestions questions={questions} places={places} onAnswerQuestion={onAnswerQuestion} />
       <section className="home-map-teaser">
         <div>
@@ -641,6 +721,73 @@ function QuickStats() {
         <BadgeCheck size={18} />
         <strong>비공개</strong>
         <span>개인 위치</span>
+      </div>
+    </section>
+  );
+}
+
+function StatusReportCard({
+  onSelectPlace,
+  place,
+  report,
+}: {
+  onSelectPlace: (place: Place) => void;
+  place: Place;
+  report: PublicReport;
+}) {
+  return (
+    <button className="status-report-card" onClick={() => onSelectPlace(place)} type="button">
+      <div className={`status-report-icon status-report-icon--${report.crowdLevel}`}>
+        <StatusPill level={report.crowdLevel} />
+      </div>
+      <div>
+        <strong>{place.name}</strong>
+        <p>{report.comment ?? "사진 없이 상태만 빠르게 올라왔습니다."}</p>
+        <div className="state-chip-row">
+          <span>사람 {crowdLabels[report.crowdLevel]}</span>
+          <span>줄 {lineLabels[report.lineStatus]}</span>
+          <span>주차 {parkingLabels[report.parkingStatus]}</span>
+          <span>{verificationLabel(report)}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function PopularPlaces({
+  items,
+  onSelectPlace,
+}: {
+  items: PopularPlace[];
+  onSelectPlace: (place: Place) => void;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="section-block">
+      <div className="section-title">
+        <h2>지금 많이 확인하는 곳</h2>
+        <span>최근 3시간</span>
+      </div>
+      <div className="popular-place-list">
+        {items.map((item, index) => (
+          <button className="popular-place-card" key={item.place.id} onClick={() => onSelectPlace(item.place)} type="button">
+            <span className="popular-rank">{index + 1}</span>
+            <div>
+              <strong>{item.place.name}</strong>
+              <p>{item.reason}</p>
+              <div className="popular-signal-row">
+                <span>제보 {item.reportCount}</span>
+                <span>질문 {item.pendingQuestionCount}</span>
+                <span>사진 {item.photoReportCount}</span>
+                {item.navigationIntentCount > 0 && <span>길찾기 {item.navigationIntentCount}</span>}
+              </div>
+            </div>
+            <ChevronRight size={18} />
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -796,6 +943,7 @@ function PlaceScreen({
   onAnswerQuestion,
   onGoQuestion,
   onGoReport,
+  onNavigateIntent,
   place,
   questions,
   reports,
@@ -805,6 +953,7 @@ function PlaceScreen({
   onAnswerQuestion: (question: PublicQuestion) => void;
   onGoQuestion: () => void;
   onGoReport: () => void;
+  onNavigateIntent: (provider: NavigationProvider, place: Place) => void;
   place: Place;
   questions: PublicQuestion[];
   reports: PublicReport[];
@@ -822,7 +971,11 @@ function PlaceScreen({
         <StatusPill level={place.crowdLevel} label={place.status} />
         <h2>{place.name}</h2>
         <p>{place.address}</p>
-        <div className="detail-summary">{place.summary}</div>
+        <div className="decision-card">
+          <span>현재 판단</span>
+          <strong>{place.goSignal}</strong>
+          <p>{place.summary}</p>
+        </div>
         <div className="metric-row">
           <span>사람 {place.status}</span>
           <span>줄 {place.line}</span>
@@ -847,6 +1000,24 @@ function PlaceScreen({
         <div>
           <span>사진 있는 제보</span>
           <strong>{photoReports.length}건</strong>
+        </div>
+      </section>
+
+      <section className="nav-cta-card" aria-label="길찾기">
+        <div>
+          <p className="eyebrow">가기 전 마지막 확인</p>
+          <strong>길찾기 전에 현장 상태를 같이 보세요</strong>
+          <span>길찾기 클릭은 지금 많이 확인하는 곳 신호로 반영됩니다.</span>
+        </div>
+        <div className="nav-cta-actions">
+          <button onClick={() => onNavigateIntent("kakao", place)} type="button">
+            <Navigation size={17} />
+            카카오내비로 길찾기
+          </button>
+          <button onClick={() => onNavigateIntent("tmap", place)} type="button">
+            <Navigation size={17} />
+            티맵으로 길찾기
+          </button>
         </div>
       </section>
 
@@ -1200,11 +1371,13 @@ function QuestionScreen({
 
 function MyScreen({
   askCredits,
+  answersSubmitted,
   questionsSubmitted,
   reportsSubmitted,
   trustScore,
 }: {
   askCredits: number;
+  answersSubmitted: number;
   questionsSubmitted: number;
   reportsSubmitted: number;
   trustScore: number;
@@ -1239,7 +1412,7 @@ function MyScreen({
         </div>
         <div>
           <BadgeCheck size={22} />
-          <strong>0</strong>
+          <strong>{answersSubmitted}</strong>
           <span>내가 답한 질문</span>
         </div>
         <div>
@@ -1404,6 +1577,94 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   }
 
   return payload.data as T;
+}
+
+function getRecentReports(reports: PublicReport[], limit: number) {
+  return [...reports]
+    .filter((report) => !report.hiddenAt)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, limit);
+}
+
+function getPopularPlaces(
+  places: Place[],
+  reports: PublicReport[],
+  questions: PublicQuestion[],
+  navigationIntentByPlaceId: NavigationIntentCounts,
+): PopularPlace[] {
+  return places
+    .map((place) => {
+      const placeReports = reports.filter((report) => report.placeId === place.id && !report.hiddenAt);
+      const placeQuestions = questions.filter((question) => question.placeId === place.id);
+      const pendingQuestionCount = placeQuestions.filter((question) => !question.answeredReportId).length;
+      const photoReportCount = placeReports.filter((report) => report.photoUrl).length;
+      const navigationIntentCount = navigationIntentByPlaceId[place.id] ?? 0;
+      const urgencyBonus = place.crowdLevel === "busy" || place.crowdLevel === "packed" || place.parking === "만차" ? 2 : 0;
+      const score =
+        placeReports.length * 3 +
+        photoReportCount * 2 +
+        pendingQuestionCount * 2 +
+        placeQuestions.length +
+        navigationIntentCount * 2 +
+        urgencyBonus;
+
+      return {
+        place,
+        score,
+        reportCount: placeReports.length,
+        pendingQuestionCount,
+        photoReportCount,
+        navigationIntentCount,
+        reason: popularReason(placeReports.length, pendingQuestionCount, photoReportCount, navigationIntentCount),
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.place.name.localeCompare(right.place.name, "ko"));
+}
+
+function popularReason(
+  reportCount: number,
+  pendingQuestionCount: number,
+  photoReportCount: number,
+  navigationIntentCount: number,
+) {
+  if (navigationIntentCount > 0) {
+    return `방금 길찾기 관심 ${navigationIntentCount}회`;
+  }
+
+  if (pendingQuestionCount > 0) {
+    return `답변 기다리는 질문 ${pendingQuestionCount}개`;
+  }
+
+  if (photoReportCount > 0) {
+    return `사진 있는 현장 제보 ${photoReportCount}건`;
+  }
+
+  return `최근 제보 ${reportCount}건`;
+}
+
+function isRenderablePhotoUrl(photoUrl: string | null) {
+  return Boolean(photoUrl && (photoUrl.startsWith("http://") || photoUrl.startsWith("https://") || photoUrl.startsWith("/")));
+}
+
+function photoBackgroundStyle(photoUrl: string | null) {
+  if (!isRenderablePhotoUrl(photoUrl)) {
+    return undefined;
+  }
+
+  return {
+    backgroundImage: `linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.58)), url("${photoUrl}")`,
+  };
+}
+
+function navigationUrlForPlace(provider: NavigationProvider, place: Place) {
+  const encodedName = encodeURIComponent(place.name);
+
+  if (provider === "kakao") {
+    return `https://map.kakao.com/link/to/${encodedName},${place.latitude},${place.longitude}`;
+  }
+
+  return `https://www.tmap.co.kr/search?query=${encodedName}`;
 }
 
 function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: PublicQuestion[]): Place[] {
