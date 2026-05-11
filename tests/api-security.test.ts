@@ -5,6 +5,7 @@ import test from "node:test";
 const { createQuestion, createReport, listPublicReports } = await import(
   new URL("../src/lib/mock-store.ts", import.meta.url).href
 );
+const store = await import(new URL("../src/lib/store.ts", import.meta.url).href);
 const { validatePhotoUpload, sanitizePhotoUpload } = await import(
   new URL("../src/lib/photo-validation.ts", import.meta.url).href
 );
@@ -97,6 +98,60 @@ test("rate limiter blocks excessive actions by server-derived actor", () => {
   );
 });
 
+test("photo uploads use a dedicated rate limit bucket", () => {
+  resetRateLimits();
+
+  for (let index = 0; index < 6; index += 1) {
+    checkRateLimit({ action: "upload_report_photo", actorId: "actor-photo", now: 2_000 });
+  }
+
+  assert.throws(
+    () => checkRateLimit({ action: "upload_report_photo", actorId: "actor-photo", now: 2_000 }),
+    (error: unknown) => (error as { code?: string }).code === "RATE_LIMITED",
+  );
+});
+
+test("production and preview environments cannot silently fall back to mock store", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  const previousMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_STORE;
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const previousService = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  try {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.NEXT_PUBLIC_USE_MOCK_STORE = "true";
+    setEnv("NODE_ENV", "production");
+    delete process.env.VERCEL_ENV;
+
+    assert.throws(
+      () => store.usingSupabaseStore(),
+      (error: unknown) => (error as { code?: string }).code === "SUPABASE_NOT_CONFIGURED",
+    );
+
+    setEnv("NODE_ENV", "development");
+    setEnv("VERCEL_ENV", "preview");
+
+    assert.throws(
+      () => store.usingSupabaseStore(),
+      (error: unknown) => (error as { code?: string }).code === "SUPABASE_NOT_CONFIGURED",
+    );
+
+    delete process.env.VERCEL_ENV;
+    assert.equal(store.usingSupabaseStore(), false);
+  } finally {
+    restoreEnv("NODE_ENV", previousNodeEnv);
+    restoreEnv("VERCEL_ENV", previousVercelEnv);
+    restoreEnv("NEXT_PUBLIC_USE_MOCK_STORE", previousMockFlag);
+    restoreEnv("NEXT_PUBLIC_SUPABASE_URL", previousUrl);
+    restoreEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", previousAnon);
+    restoreEnv("SUPABASE_SERVICE_ROLE_KEY", previousService);
+  }
+});
+
 test("moderation queue requires an admin token", () => {
   assert.throws(
     () => assertAdminTokenHeader(new Request("http://localhost/api/moderation-flags"), undefined),
@@ -172,6 +227,13 @@ test("photo validation rejects unsupported and mismatched uploads", () => {
   );
 });
 
+test("photo storage sanitization limits decoded image pixels", async () => {
+  const source = await readFile(new URL("../src/lib/photo-validation.ts", import.meta.url), "utf8");
+
+  assert.match(source, /MAX_PHOTO_PIXELS/);
+  assert.match(source, /limitInputPixels: MAX_PHOTO_PIXELS/);
+});
+
 test("photo sanitization strips EXIF intent and removes original filename", () => {
   const sanitized = sanitizePhotoUpload({
     name: "hospital-gps-user-name.jpg",
@@ -206,5 +268,28 @@ test("photo upload route creates a profile before writing upload ownership", asy
   const source = await readFile(new URL("../src/app/api/report-photos/route.ts", import.meta.url), "utf8");
 
   assert.match(source, /ensureProfile\(userId\)/);
+  assert.match(source, /upload_report_photo/);
   assert.ok(source.indexOf("ensureProfile(userId)") < source.indexOf("report_photo_uploads"));
 });
+
+test("unused photo cleanup removes storage objects before deleting upload records", async () => {
+  const source = await readFile(new URL("../src/lib/supabase-store.ts", import.meta.url), "utf8");
+
+  assert.match(source, /cleanupUnusedReportPhotos/);
+  assert.match(source, /list_stale_report_photo_uploads/);
+  assert.match(source, /storage\.from\(bucketName\)\.remove/);
+  assert.match(source, /\.from\("report_photo_uploads"\)\s+\.delete\(\)/);
+  assert.ok(source.indexOf("storage.from(bucketName).remove") < source.indexOf('.from("report_photo_uploads")'));
+});
+
+function restoreEnv(key: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+}
+
+function setEnv(key: string, value: string) {
+  process.env[key] = value;
+}

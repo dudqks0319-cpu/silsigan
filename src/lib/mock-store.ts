@@ -137,6 +137,7 @@ const questions: StoredQuestion[] = [
     questionType: "parking",
     body: "지금 국가정원 공영주차장 들어갈 수 있나요?",
     creditCost: 1,
+    answeredReportId: null,
     createdAt: new Date(demoNow.getTime() - 6 * 60 * 1000).toISOString(),
   },
   {
@@ -145,6 +146,7 @@ const questions: StoredQuestion[] = [
     questionType: "photo_request",
     body: "무대 앞쪽 사진으로 볼 수 있을까요?",
     creditCost: 2,
+    answeredReportId: null,
     createdAt: new Date(demoNow.getTime() - 10 * 60 * 1000).toISOString(),
   },
 ];
@@ -242,6 +244,17 @@ export function createReport(input: CreateReportInput, options: { actorId?: stri
   };
 
   const credits = creditEventsForReport(Boolean(verifiedRadiusM), Boolean(report.photoUrl));
+  const answeredQuestion = input.answerQuestionId ? findAnswerableQuestion(input.answerQuestionId, input.placeId) : null;
+
+  if (answeredQuestion && !verifiedRadiusM) {
+    throw new ApiError(403, "ANSWER_LOCATION_REQUIRED", "질문 답변 보상은 현장 인증 제보에만 지급됩니다.");
+  }
+
+  if (answeredQuestion) {
+    answeredQuestion.answeredReportId = report.id;
+    credits.push({ type: "answer_question", amount: 2 });
+  }
+
   reports.unshift(report);
   addCredits(options.actorId ?? "demo-user", credits);
 
@@ -293,6 +306,7 @@ export function createQuestion(input: CreateQuestionInput, options: CreateQuesti
     questionType: input.questionType,
     body: input.body,
     creditCost,
+    answeredReportId: null,
     createdAt: new Date().toISOString(),
   };
 
@@ -379,6 +393,7 @@ function maskQuestionForPublic(question: StoredQuestion) {
     questionType: question.questionType,
     body: question.body,
     creditCost: question.creditCost,
+    answeredReportId: question.answeredReportId,
     createdAt: question.createdAt,
   };
 }
@@ -390,4 +405,14 @@ function findPlace(placeId: string) {
   }
 
   return place;
+}
+
+function findAnswerableQuestion(questionId: string, placeId: string) {
+  const question = questions.find((candidate) => candidate.id === questionId && candidate.placeId === placeId);
+
+  if (!question || question.answeredReportId) {
+    throw new ApiError(404, "QUESTION_NOT_FOUND", "답변할 물어보기를 찾지 못했습니다.");
+  }
+
+  return question;
 }

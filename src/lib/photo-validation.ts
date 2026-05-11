@@ -2,6 +2,7 @@ import { ApiError } from "./errors.ts";
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxPhotoBytes = 8 * 1024 * 1024;
+const MAX_PHOTO_PIXELS = 24_000_000;
 
 const magicBytes: Record<string, number[][]> = {
   "image/jpeg": [[0xff, 0xd8, 0xff]],
@@ -71,7 +72,7 @@ export async function sanitizePhotoUploadForStorage(candidate: PhotoUploadCandid
   }
 
   const sharp = (await import("sharp")).default;
-  const reencoded = await sharp(candidate.bytes)
+  const reencoded = await sharp(candidate.bytes, { limitInputPixels: MAX_PHOTO_PIXELS })
     .rotate()
     .jpeg({
       mozjpeg: true,

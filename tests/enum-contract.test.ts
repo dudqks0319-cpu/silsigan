@@ -73,6 +73,22 @@ test("beta Supabase migration protects report rewards and private photos", async
   assert.match(sql, /pg_advisory_xact_lock/i);
 });
 
+test("operational hardening migration supports stale photo cleanup and question answers", async () => {
+  const sql = await readFile(
+    new URL("../supabase/migrations/20260512103000_beta_operational_hardening.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(sql, /create or replace function public\.list_stale_report_photo_uploads/i);
+  assert.match(sql, /consumed_at is null/i);
+  assert.match(sql, /interval '24 hours'/i);
+  assert.match(sql, /p_answer_question_id uuid/i);
+  assert.match(sql, /ANSWER_LOCATION_REQUIRED/i);
+  assert.match(sql, /answer_question/i);
+  assert.match(sql, /answered_report_id = v_report\.id/i);
+  assert.match(sql, /grant execute on function public\.list_stale_report_photo_uploads/i);
+});
+
 function parseSqlEnum(sql: string, enumName: string) {
   const match = new RegExp(`create type public\\.${enumName} as enum \\(([^;]+)\\);`).exec(sql);
   assert.ok(match, `Missing enum ${enumName}`);

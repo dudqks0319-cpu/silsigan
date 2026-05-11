@@ -90,6 +90,7 @@ export type StoredQuestion = {
   questionType: QuestionType;
   body: string;
   creditCost: 1 | 2;
+  answeredReportId: string | null;
   createdAt: string;
 };
 

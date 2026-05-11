@@ -13,7 +13,7 @@ import {
 export async function POST(request: Request) {
   try {
     const userId = await getRequiredUserId(request);
-    checkRateLimit({ action: "create_report", actorId: userId });
+    checkRateLimit({ action: "upload_report_photo", actorId: userId });
     await ensureProfile(userId);
 
     const formData = await request.formData();

@@ -27,6 +27,7 @@ export const createReportSchema = z.object({
   photoName: z.string().trim().max(160).optional(),
   photoMime: z.string().trim().max(80).optional(),
   photoSizeBytes: z.number().int().min(0).max(8 * 1024 * 1024).optional(),
+  answerQuestionId: z.string().trim().min(1).max(80).optional(),
   clientLocation: coordinateSchema.optional(),
 });
 

@@ -2,11 +2,17 @@ import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "./errors.ts";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function getSupabaseEnv() {
+  return {
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  };
+}
 
 export function isSupabaseConfigured() {
+  const { supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey } = getSupabaseEnv();
+
   return Boolean(supabaseUrl && supabaseAnonKey && supabaseServiceRoleKey);
 }
 
@@ -25,6 +31,8 @@ export function getBearerToken(request: Request) {
 }
 
 export function createSupabaseServiceClient(): SupabaseClient {
+  const { supabaseUrl, supabaseServiceRoleKey } = getSupabaseEnv();
+
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     throw new ApiError(503, "SUPABASE_NOT_CONFIGURED", "Supabase 서비스 환경 변수가 설정되지 않았습니다.");
   }
@@ -39,6 +47,7 @@ export function createSupabaseServiceClient(): SupabaseClient {
 
 export function createSupabaseUserClient(request: Request): SupabaseClient {
   const token = getBearerToken(request);
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv();
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new ApiError(503, "SUPABASE_NOT_CONFIGURED", "Supabase 공개 환경 변수가 설정되지 않았습니다.");
@@ -110,6 +119,14 @@ export function throwSupabaseError(error: { message?: string; code?: string }, c
 
   if (rawMessage.includes("PLACE_NOT_FOUND")) {
     throw new ApiError(404, "PLACE_NOT_FOUND", "장소를 찾을 수 없습니다.");
+  }
+
+  if (rawMessage.includes("QUESTION_NOT_FOUND")) {
+    throw new ApiError(404, "QUESTION_NOT_FOUND", "답변할 물어보기를 찾지 못했습니다.");
+  }
+
+  if (rawMessage.includes("ANSWER_LOCATION_REQUIRED")) {
+    throw new ApiError(403, "ANSWER_LOCATION_REQUIRED", "질문 답변 보상은 현장 인증 제보에만 지급됩니다.");
   }
 
   if (rawMessage.includes("PHOTO_UPLOAD_NOT_FOUND")) {

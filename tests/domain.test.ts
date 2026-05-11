@@ -195,3 +195,45 @@ test("question creation does not write when credits are insufficient", () => {
 
   assert.equal(listQuestions("ulsan-taehwagang").length, before);
 });
+
+test("answering a question with a verified report grants answer credits and links the report", () => {
+  const questionResult = createQuestion(
+    {
+      placeId: "ulsan-taehwagang",
+      questionType: "parking",
+      body: "지금 주차장 들어갈 수 있나요?",
+    },
+    {
+      actorId: "question-answer-asker",
+    },
+  );
+
+  const answerResult = createReport(
+    {
+      placeId: "ulsan-taehwagang",
+      category: "tourism",
+      crowdLevel: "normal",
+      lineStatus: "short",
+      parkingStatus: "limited",
+      weatherFeel: "good",
+      comment: "지금은 입구 쪽만 조금 기다리면 들어갈 수 있어요.",
+      answerQuestionId: questionResult.question.id,
+      clientLocation: {
+        latitude: 35.5486,
+        longitude: 129.3005,
+      },
+    },
+    {
+      actorId: "question-answer-reporter",
+    },
+  );
+  const updatedQuestion = listQuestions("ulsan-taehwagang").find(
+    (question: { id: string }) => question.id === questionResult.question.id,
+  );
+
+  assert.deepEqual(
+    answerResult.credits.find((event: { type: string }) => event.type === "answer_question"),
+    { type: "answer_question", amount: 2 },
+  );
+  assert.equal(updatedQuestion?.answeredReportId, answerResult.report.id);
+});

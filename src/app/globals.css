@@ -147,6 +147,45 @@ img {
   font-size: 14px;
 }
 
+.legal-page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: var(--bg);
+}
+
+.legal-page section {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.legal-page h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.12;
+}
+
+.legal-page p {
+  margin: 0;
+  color: #344054;
+  line-height: 1.6;
+}
+
+.legal-page a {
+  width: fit-content;
+  padding: 12px 14px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-radius: 14px;
+  font-weight: 900;
+}
+
 .phone-frame {
   position: relative;
   display: grid;
@@ -470,7 +509,9 @@ img {
 .policy-list,
 .live-feed,
 .answer-list,
-.report-trust-grid {
+.report-trust-grid,
+.trust-metrics-card,
+.reward-policy-card {
   display: grid;
   gap: 10px;
 }
@@ -505,11 +546,15 @@ img {
 .answer-card,
 .home-map-teaser,
 .detail-hero,
+.trust-metrics-card,
 .form-hero,
 .profile-card,
 .question-preview article,
 .policy-list,
 .sensitive-warning,
+.sensitive-workflow-card,
+.reward-policy-card,
+.answer-target-card,
 .ticket-card,
 .verify-card,
 .report-trust-group,
@@ -582,6 +627,15 @@ img {
   margin-bottom: 4px;
   font-size: 14px;
   line-height: 1.35;
+}
+
+.answer-card em {
+  display: inline-block;
+  margin-top: 7px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .live-thumb,
@@ -775,6 +829,30 @@ img {
   padding: 18px;
 }
 
+.trust-metrics-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px;
+}
+
+.trust-metrics-card div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 14px;
+}
+
+.trust-metrics-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trust-metrics-card strong {
+  font-size: 17px;
+}
+
 .detail-hero h2,
 .form-hero h2,
 .profile-card h2 {
@@ -839,6 +917,73 @@ img {
   border-color: #f3d27b;
 }
 
+.sensitive-workflow-card,
+.reward-policy-card,
+.answer-target-card {
+  padding: 14px;
+}
+
+.sensitive-workflow-card {
+  display: grid;
+  gap: 7px;
+  color: #5f4200;
+  background: #fffaf0;
+  border-color: #e9bd55;
+}
+
+.sensitive-workflow-card p,
+.sensitive-workflow-card span {
+  margin: 0;
+  color: #7a5a14;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.reward-policy-card {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reward-policy-card div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 14px;
+}
+
+.reward-policy-card strong {
+  font-size: 12px;
+}
+
+.reward-policy-card span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.reward-policy-card p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.answer-target-card {
+  display: flex;
+  gap: 12px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: rgba(8, 127, 140, 0.22);
+}
+
+.answer-target-card p {
+  margin: 4px 0 0;
+  color: #22656b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -893,6 +1038,18 @@ img {
   display: flex;
   gap: 12px;
   padding: 15px;
+}
+
+.inline-answer-button {
+  min-height: 36px;
+  margin-top: 9px;
+  padding: 0 12px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .sticky-actions {
@@ -1055,6 +1212,10 @@ img {
   gap: 10px;
 }
 
+.location-actions--single {
+  grid-template-columns: 1fr;
+}
+
 .unverified-policy {
   grid-column: 1 / -1;
   margin: 0;
@@ -1127,6 +1288,100 @@ img {
   border-radius: 14px;
   font-size: 14px;
   font-weight: 900;
+}
+
+.policy-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: end center;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.policy-modal {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-height: calc(100% - 24px);
+  padding: 18px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.24);
+}
+
+.policy-modal h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.18;
+}
+
+.policy-modal p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.policy-check-list {
+  display: grid;
+  gap: 8px;
+}
+
+.policy-check-list label {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  background: #f8fafc;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.policy-check-list input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.policy-link-row,
+.policy-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.policy-link-row a,
+.policy-modal-actions button {
+  min-height: 38px;
+  padding: 0 11px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.policy-link-row a {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.policy-modal-actions button {
+  border: 0;
+}
+
+.policy-modal-actions button:first-child {
+  color: #344054;
+  background: #f2f4f7;
+}
+
+.policy-modal-actions button:last-child {
+  color: #fff;
+  background: var(--accent);
 }
 
 .empty-state {
@@ -1217,6 +1472,8 @@ textarea:focus-visible {
 
   .photo-grid,
   .report-trust-grid,
+  .trust-metrics-card,
+  .reward-policy-card,
   .quick-grid,
   .my-grid {
     grid-template-columns: 1fr;

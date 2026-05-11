@@ -67,8 +67,11 @@ type PublicQuestion = {
   questionType: QuestionType;
   body: string;
   creditCost: 1 | 2;
+  answeredReportId: string | null;
   createdAt: string;
 };
+
+type ConsentAction = "photo" | "location" | "report" | "question" | "flag";
 
 const presentationByPlaceId: Record<string, Pick<Place, "distance" | "coordinates" | "goSignal">> = {
   "ulsan-taehwagang": { distance: "1.2km", coordinates: { x: 28, y: 42 }, goSignal: "제보 기준 괜찮음" },
@@ -87,6 +90,8 @@ const initialReport: ReportDraft = {
   photoFile: null,
   photoPreviewUrl: null,
   locationVerified: false,
+  answerQuestionId: null,
+  answerQuestionBody: null,
   clientLocation: null,
 };
 
@@ -95,6 +100,8 @@ const initialQuestion: QuestionDraft = {
   content: "",
   isPhotoRequest: false,
 };
+
+const policyConsentKey = ["silsigan", "policy", "consent", "v1"].join("_");
 
 export default function SilsiganPrototype() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
@@ -112,6 +119,8 @@ export default function SilsiganPrototype() {
   const [toast, setToast] = useState("현장 인증 제보를 올리면 물어보기권을 받을 수 있어요.");
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasPolicyConsent, setHasPolicyConsent] = useState(() => initialPolicyConsentAccepted());
+  const [pendingConsentAction, setPendingConsentAction] = useState<ConsentAction | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedPlace = useMemo(
@@ -163,7 +172,53 @@ export default function SilsiganPrototype() {
     setActiveTab(nextTab);
   };
 
-  const requestLocation = async () => {
+  const requestPolicyConsent = (action: ConsentAction) => {
+    if (hasPolicyConsent) {
+      return false;
+    }
+
+    setPendingConsentAction(action);
+    return true;
+  };
+
+  const acceptPolicyConsent = () => {
+    window.localStorage.setItem(policyConsentKey, "accepted");
+    setHasPolicyConsent(true);
+    const action = pendingConsentAction;
+    setPendingConsentAction(null);
+
+    window.setTimeout(() => {
+      if (action === "photo") {
+        fileInputRef.current?.click();
+      }
+
+      if (action === "location") {
+        void requestLocationAfterConsent();
+      }
+
+      if (action === "report") {
+        void submitReportAfterConsent();
+      }
+
+      if (action === "question") {
+        void submitQuestionAfterConsent();
+      }
+
+      if (action === "flag") {
+        void reportSensitiveContentAfterConsent();
+      }
+    }, 0);
+  };
+
+  const requestLocation = () => {
+    if (requestPolicyConsent("location")) {
+      return;
+    }
+
+    void requestLocationAfterConsent();
+  };
+
+  const requestLocationAfterConsent = async () => {
     if (!navigator.geolocation) {
       setReportDraft((current) => ({
         ...current,
@@ -202,7 +257,15 @@ export default function SilsiganPrototype() {
     }
   };
 
-  const submitReport = async () => {
+  const submitReport = () => {
+    if (requestPolicyConsent("report")) {
+      return;
+    }
+
+    void submitReportAfterConsent();
+  };
+
+  const submitReportAfterConsent = async () => {
     if (!selectedPlace || isSubmitting) {
       return;
     }
@@ -227,6 +290,7 @@ export default function SilsiganPrototype() {
           photoMime: reportDraft.hasPhoto && !uploadedPhotoPath ? reportDraft.photoFile?.type ?? "image/jpeg" : undefined,
           photoSizeBytes: reportDraft.hasPhoto && !uploadedPhotoPath ? reportDraft.photoFile?.size ?? 128_000 : undefined,
           photoName: reportDraft.hasPhoto && !uploadedPhotoPath ? "field-report.jpg" : undefined,
+          answerQuestionId: reportDraft.answerQuestionId ?? undefined,
           clientLocation: reportDraft.clientLocation ?? undefined,
         }),
       });
@@ -235,7 +299,9 @@ export default function SilsiganPrototype() {
       setTrustScore((current) => Math.min(current + (reportDraft.locationVerified ? 3 : 1), 99));
       setReportsSubmitted((current) => current + 1);
       setToast(
-        reportDraft.locationVerified
+        reportDraft.answerQuestionId
+          ? `답변 완료! 물어보기권 +${earned}를 받았어요.`
+          : reportDraft.locationVerified
           ? `지금 상황이 올라갔습니다. 물어보기권 +${earned}, 3시간 후 자동 만료됩니다.`
           : `인증 없이 올라갔습니다. ${earned > 0 ? `물어보기권 +${earned}, ` : ""}현장 인증 없음으로 표시됩니다.`,
       );
@@ -249,7 +315,15 @@ export default function SilsiganPrototype() {
     }
   };
 
-  const submitQuestion = async () => {
+  const submitQuestion = () => {
+    if (requestPolicyConsent("question")) {
+      return;
+    }
+
+    void submitQuestionAfterConsent();
+  };
+
+  const submitQuestionAfterConsent = async () => {
     if (!selectedPlace || isSubmitting) {
       return;
     }
@@ -279,7 +353,15 @@ export default function SilsiganPrototype() {
     }
   };
 
-  const reportSensitiveContent = async () => {
+  const reportSensitiveContent = () => {
+    if (requestPolicyConsent("flag")) {
+      return;
+    }
+
+    void reportSensitiveContentAfterConsent();
+  };
+
+  const reportSensitiveContentAfterConsent = async () => {
     const reportId = selectedReports[0]?.id;
     if (!reportId) {
       setToast("신고할 제보가 아직 없습니다.");
@@ -301,6 +383,33 @@ export default function SilsiganPrototype() {
     } catch (error) {
       setToast(error instanceof Error ? error.message : "신고 접수에 실패했습니다.");
     }
+  };
+
+  const openPhotoPicker = () => {
+    if (requestPolicyConsent("photo")) {
+      return;
+    }
+
+    fileInputRef.current?.click();
+  };
+
+  const answerQuestion = (question: PublicQuestion) => {
+    const place = places.find((candidate) => candidate.id === question.placeId);
+
+    if (!place) {
+      setToast("답변할 장소를 찾지 못했습니다.");
+      return;
+    }
+
+    setSelectedPlaceId(place.id);
+    setReportDraft({
+      ...initialReport,
+      answerQuestionId: question.id,
+      answerQuestionBody: question.body,
+      comment: answerCommentForQuestion(question),
+    });
+    setToast("현장 답변하기 +2는 현장 인증 후 등록할 수 있어요.");
+    setActiveTab("report");
   };
 
   const handlePhotoChange = (file: File | null) => {
@@ -338,6 +447,7 @@ export default function SilsiganPrototype() {
                   reports={reports}
                   onGoMap={() => setActiveTab("map")}
                   onGoReport={() => setActiveTab("report")}
+                  onAnswerQuestion={answerQuestion}
                   onSelectPlace={selectPlace}
                 />
               )}
@@ -346,6 +456,7 @@ export default function SilsiganPrototype() {
                 <PlaceScreen
                   flagged={flagged}
                   onFlag={reportSensitiveContent}
+                  onAnswerQuestion={answerQuestion}
                   onGoQuestion={() => setActiveTab("question")}
                   onGoReport={() => setActiveTab("report")}
                   place={selectedPlace}
@@ -359,6 +470,7 @@ export default function SilsiganPrototype() {
                   fileInputRef={fileInputRef}
                   isSubmitting={isSubmitting}
                   onChange={setReportDraft}
+                  onPickPhoto={openPhotoPicker}
                   onPhotoChange={handlePhotoChange}
                   onRequestLocation={requestLocation}
                   onSubmit={submitReport}
@@ -386,6 +498,13 @@ export default function SilsiganPrototype() {
             </>
           )}
         </div>
+        {pendingConsentAction && (
+          <PolicyConsentModal
+            action={pendingConsentAction}
+            onAccept={acceptPolicyConsent}
+            onClose={() => setPendingConsentAction(null)}
+          />
+        )}
         <BottomNav activeTab={activeTab} onChange={setActiveTab} />
       </section>
     </main>
@@ -416,6 +535,7 @@ function HomeScreen({
   reports,
   onGoMap,
   onGoReport,
+  onAnswerQuestion,
   onSelectPlace,
 }: {
   places: Place[];
@@ -423,6 +543,7 @@ function HomeScreen({
   reports: PublicReport[];
   onGoMap: () => void;
   onGoReport: () => void;
+  onAnswerQuestion: (question: PublicQuestion) => void;
   onSelectPlace: (place: Place) => void;
 }) {
   const calmPlaces = places.filter((place) => place.crowdLevel === "quiet" || place.crowdLevel === "normal");
@@ -477,7 +598,7 @@ function HomeScreen({
         </div>
       </section>
 
-      <AnswerableQuestions questions={questions} places={places} onSelectPlace={onSelectPlace} />
+      <AnswerableQuestions questions={questions} places={places} onAnswerQuestion={onAnswerQuestion} />
       <section className="home-map-teaser">
         <div>
           <p className="eyebrow">내주변 지도</p>
@@ -528,13 +649,13 @@ function QuickStats() {
 function AnswerableQuestions({
   questions,
   places,
-  onSelectPlace,
+  onAnswerQuestion,
 }: {
   questions: PublicQuestion[];
   places: Place[];
-  onSelectPlace: (place: Place) => void;
+  onAnswerQuestion: (question: PublicQuestion) => void;
 }) {
-  const openQuestions = questions.slice(0, 3);
+  const openQuestions = questions.filter((question) => !question.answeredReportId).slice(0, 3);
 
   if (openQuestions.length === 0) {
     return null;
@@ -555,7 +676,7 @@ function AnswerableQuestions({
               className="answer-card"
               disabled={!place}
               key={question.id}
-              onClick={() => place && onSelectPlace(place)}
+              onClick={() => onAnswerQuestion(question)}
               type="button"
             >
               <MessageCircleQuestion size={20} />
@@ -564,6 +685,7 @@ function AnswerableQuestions({
                 <span>
                   {place?.name ?? "장소 확인 중"} · {questionTypeLabels[question.questionType]} · {minutesAgo(question.createdAt)}
                 </span>
+                <em>현장 답변하기 +2</em>
               </div>
             </button>
           );
@@ -652,10 +774,10 @@ function MapScreen({
       <section className="map-filter-row" aria-label="지도 필터">
         {[
           ["all", "전체"],
-          ["parking", "주차"],
-          ["line", "줄"],
-          ["busy", "혼잡"],
-          ["quiet", "한산"],
+          ["parking", "주차 만차"],
+          ["line", "줄 있음"],
+          ["busy", "사람 많음"],
+          ["quiet", "한산함"],
           ["photo", "사진 있음"],
         ].map(([id, label]) => (
           <button aria-pressed={mapFilter === id} key={id} onClick={() => setMapFilter(id)} type="button">
@@ -671,6 +793,7 @@ function MapScreen({
 function PlaceScreen({
   flagged,
   onFlag,
+  onAnswerQuestion,
   onGoQuestion,
   onGoReport,
   place,
@@ -679,6 +802,7 @@ function PlaceScreen({
 }: {
   flagged: boolean;
   onFlag: () => void;
+  onAnswerQuestion: (question: PublicQuestion) => void;
   onGoQuestion: () => void;
   onGoReport: () => void;
   place: Place;
@@ -688,6 +812,7 @@ function PlaceScreen({
   const isSensitive = place.category === "hospital" || place.category === "public_office";
   const verifiedReports = reports.filter((report) => report.locationVerified);
   const unverifiedReports = reports.filter((report) => !report.locationVerified);
+  const photoReports = reports.filter((report) => report.photoUrl);
   const lastVerifiedReport = verifiedReports[0];
 
   return (
@@ -703,9 +828,25 @@ function PlaceScreen({
           <span>줄 {place.line}</span>
           <span>주차 {place.parking}</span>
           <span>날씨 {place.weather}</span>
-          <span>마지막 현장 인증 {lastVerifiedReport ? minutesAgo(lastVerifiedReport.createdAt) : "없음"}</span>
-          <span>최근 3시간 제보 {reports.length}건</span>
-          <span>인증 없는 제보 {unverifiedReports.length}건</span>
+        </div>
+      </section>
+
+      <section className="trust-metrics-card" aria-label="장소 신뢰 정보">
+        <div>
+          <span>마지막 현장 인증</span>
+          <strong>{lastVerifiedReport ? minutesAgo(lastVerifiedReport.createdAt) : "없음"}</strong>
+        </div>
+        <div>
+          <span>최근 3시간 제보</span>
+          <strong>{reports.length}건</strong>
+        </div>
+        <div>
+          <span>인증 없는 제보</span>
+          <strong>{unverifiedReports.length}건</strong>
+        </div>
+        <div>
+          <span>사진 있는 제보</span>
+          <strong>{photoReports.length}건</strong>
         </div>
       </section>
 
@@ -750,7 +891,15 @@ function PlaceScreen({
               <MessageCircleQuestion size={20} />
               <div>
                 <strong>{question.body}</strong>
-                <p>{questionTypeLabels[question.questionType]} · {minutesAgo(question.createdAt)}</p>
+                <p>
+                  {questionTypeLabels[question.questionType]} · {minutesAgo(question.createdAt)} ·{" "}
+                  {question.answeredReportId ? "답변 완료" : "답변 대기"}
+                </p>
+                {!question.answeredReportId && (
+                  <button className="inline-answer-button" onClick={() => onAnswerQuestion(question)} type="button">
+                    현장 답변하기 +2
+                  </button>
+                )}
               </div>
             </article>
           ))
@@ -783,6 +932,36 @@ function SensitiveWarning() {
   );
 }
 
+function SensitiveWorkflowCard() {
+  return (
+    <section className="sensitive-workflow-card">
+      <strong>병원/관공서는 대기와 주차 중심</strong>
+      <p>대기 적음/보통/많음, 주차 가능/부족/만차, 접수 줄 없음/짧음/김 위주로 알려주세요.</p>
+      <span>사진은 외부/주차장 사진만 추가할 수 있습니다.</span>
+    </section>
+  );
+}
+
+function RewardPolicyCard({ answeringQuestion }: { answeringQuestion: boolean }) {
+  return (
+    <section className="reward-policy-card" aria-label="제보 보상 정책">
+      <div>
+        <strong>현장 인증 + 사진</strong>
+        <span>물어보기권 +2</span>
+      </div>
+      <div>
+        <strong>현장 인증만</strong>
+        <span>물어보기권 +1</span>
+      </div>
+      <div>
+        <strong>인증 없음</strong>
+        <span>보상 없음, 낮은 신뢰도</span>
+      </div>
+      {answeringQuestion && <p>질문에 답하면 현장 인증 제보 보상에 답변 보상 +2가 추가됩니다.</p>}
+    </section>
+  );
+}
+
 function ReportTrustGroup({ title, reports }: { title: string; reports: PublicReport[] }) {
   return (
     <div className="report-trust-group">
@@ -802,15 +981,15 @@ function ReportTrustGroup({ title, reports }: { title: string; reports: PublicRe
 
 function PhotoUploadButton({
   draft,
-  fileInputRef,
   isSensitive,
+  onPickPhoto,
 }: {
   draft: ReportDraft;
-  fileInputRef: RefObject<HTMLInputElement | null>;
   isSensitive: boolean;
+  onPickPhoto: () => void;
 }) {
   return (
-    <button className={`upload-box ${isSensitive ? "upload-box--caution" : ""}`} onClick={() => fileInputRef.current?.click()} type="button">
+    <button className={`upload-box ${isSensitive ? "upload-box--caution" : ""}`} onClick={onPickPhoto} type="button">
       {draft.photoPreviewUrl ? <span className="photo-preview-dot" /> : <Upload size={24} />}
       <strong>{draft.hasPhoto ? "사진 선택됨" : isSensitive ? "외부/주차장 사진만 선택" : "사진 추가"}</strong>
       <span>
@@ -827,6 +1006,7 @@ function ReportScreen({
   fileInputRef,
   isSubmitting,
   onChange,
+  onPickPhoto,
   onPhotoChange,
   onRequestLocation,
   onSubmit,
@@ -836,6 +1016,7 @@ function ReportScreen({
   fileInputRef: RefObject<HTMLInputElement | null>;
   isSubmitting: boolean;
   onChange: (draft: ReportDraft) => void;
+  onPickPhoto: () => void;
   onPhotoChange: (file: File | null) => void;
   onRequestLocation: () => void;
   onSubmit: () => void;
@@ -848,9 +1029,24 @@ function ReportScreen({
       <section className="form-hero">
         <p className="eyebrow">10초 현장 공유</p>
         <h2>{place.name}</h2>
-        <p>사진, 사람, 주차, 한 줄만 빠르게 남깁니다. 줄과 날씨는 선택입니다.</p>
+        <p>
+          {draft.answerQuestionBody
+            ? "질문에 답하려면 현장 인증이 필요합니다. 사람, 주차, 한 줄만 빠르게 남겨 주세요."
+            : "사진, 사람, 주차, 한 줄만 빠르게 남깁니다. 줄과 날씨는 선택입니다."}
+        </p>
       </section>
+      {draft.answerQuestionBody && (
+        <section className="answer-target-card">
+          <MessageCircleQuestion size={20} />
+          <div>
+            <strong>현장 답변하기 +2</strong>
+            <p>{draft.answerQuestionBody}</p>
+          </div>
+        </section>
+      )}
+      <RewardPolicyCard answeringQuestion={Boolean(draft.answerQuestionId)} />
       {isSensitive && <SensitiveWarning />}
+      {isSensitive && <SensitiveWorkflowCard />}
       <input
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
@@ -858,7 +1054,7 @@ function ReportScreen({
         ref={fileInputRef}
         type="file"
       />
-      {!isSensitive && <PhotoUploadButton draft={draft} fileInputRef={fileInputRef} isSensitive={isSensitive} />}
+      {!isSensitive && <PhotoUploadButton draft={draft} isSensitive={isSensitive} onPickPhoto={onPickPhoto} />}
       <SegmentedControl
         label="사람"
         onChange={(crowdLevel) => onChange({ ...draft, crowdLevel: crowdLevel as CrowdLevel })}
@@ -871,7 +1067,7 @@ function ReportScreen({
         options={parkingOptions}
         value={draft.parkingStatus}
       />
-      {isSensitive && <PhotoUploadButton draft={draft} fileInputRef={fileInputRef} isSensitive={isSensitive} />}
+      {isSensitive && <PhotoUploadButton draft={draft} isSensitive={isSensitive} onPickPhoto={onPickPhoto} />}
       <details className="optional-fields">
         <summary>줄/날씨 선택 입력</summary>
         <SegmentedControl
@@ -911,6 +1107,13 @@ function ReportScreen({
         <ActionButton disabled={isSubmitting} onClick={onSubmit} type="button">
           {isSubmitting ? "올리는 중..." : "현장 인증으로 올리기"}
         </ActionButton>
+      ) : draft.answerQuestionId ? (
+        <div className="location-actions location-actions--single">
+          <p className="unverified-policy">질문 답변 +2는 현장 인증이 필요합니다. 인증 없이 올리면 답변 보상을 받을 수 없습니다.</p>
+          <ActionButton disabled={isSubmitting} onClick={onRequestLocation} type="button" variant="secondary">
+            현장 인증 다시 시도
+          </ActionButton>
+        </div>
       ) : (
         <div className="location-actions">
           <p className="unverified-policy">인증 없이 올리면 낮은 신뢰도로 표시되고 물어보기권 보상은 없습니다.</p>
@@ -1057,7 +1260,71 @@ function MyScreen({
         <p>허위 확정 신고는 신뢰 점수와 물어보기권 차감에 반영됩니다.</p>
         <a href="/terms">약관</a>
         <a href="/privacy">개인정보 처리방침</a>
+        <a href="/location-terms">위치기반서비스 이용약관</a>
+        <a href="/photo-policy">사진 업로드 정책</a>
         <a href="/account/delete">계정 삭제</a>
+      </section>
+    </div>
+  );
+}
+
+function PolicyConsentModal({
+  action,
+  onAccept,
+  onClose,
+}: {
+  action: ConsentAction;
+  onAccept: () => void;
+  onClose: () => void;
+}) {
+  const actionLabel: Record<ConsentAction, string> = {
+    photo: "사진 업로드",
+    location: "위치 현장 인증",
+    report: "제보 등록",
+    question: "물어보기 등록",
+    flag: "신고 접수",
+  };
+
+  return (
+    <div className="policy-modal-backdrop" role="presentation">
+      <section className="policy-modal" role="dialog" aria-modal="true" aria-label="서비스 약관 동의">
+        <p className="eyebrow">처음 한 번만 확인</p>
+        <h2>{actionLabel[action]} 전에 동의가 필요합니다</h2>
+        <div className="policy-check-list">
+          <label>
+            <input type="checkbox" checked readOnly />
+            이용약관 동의
+          </label>
+          <label>
+            <input type="checkbox" checked readOnly />
+            개인정보 처리방침 동의
+          </label>
+          <label>
+            <input type="checkbox" checked readOnly />
+            위치기반서비스 이용약관 동의
+          </label>
+          <label>
+            <input type="checkbox" checked readOnly />
+            사진 업로드 정책 동의
+          </label>
+        </div>
+        <p>
+          얼굴, 차량번호, 서류, 진료정보가 보이는 사진은 올릴 수 없고, 정확한 위치는 현장 인증에만 사용됩니다.
+        </p>
+        <div className="policy-link-row">
+          <a href="/terms">이용약관</a>
+          <a href="/privacy">개인정보 처리방침</a>
+          <a href="/location-terms">위치기반서비스 이용약관</a>
+          <a href="/photo-policy">사진 업로드 정책</a>
+        </div>
+        <div className="policy-modal-actions">
+          <button onClick={onClose} type="button">
+            닫기
+          </button>
+          <button onClick={onAccept} type="button">
+            동의하고 계속
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -1169,7 +1436,7 @@ function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: Pu
       weather: weatherLabels[weatherFeel],
       updatedAt: latest ? minutesAgo(latest.createdAt) : "정보 없음",
       reports: latestReports.length,
-      questions: questions.filter((question) => question.placeId === place.id).length,
+      questions: questions.filter((question) => question.placeId === place.id && !question.answeredReportId).length,
       coordinates: presentation.coordinates,
       photos: latestReports.map((report) => report.comment ?? "현장 제보"),
       safetyWarning: "safetyWarning" in place && typeof place.safetyWarning === "string" ? place.safetyWarning : null,
@@ -1177,6 +1444,30 @@ function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: Pu
         latest?.crowdLevel === "packed" || latest?.parkingStatus === "full" ? "제보 기준 혼잡" : presentation.goSignal,
     };
   });
+}
+
+function answerCommentForQuestion(question: PublicQuestion) {
+  if (question.questionType === "parking") {
+    return "지금 주차 상태는 현장에서 확인했어요.";
+  }
+
+  if (question.questionType === "line") {
+    return "지금 줄 상태는 현장에서 확인했어요.";
+  }
+
+  if (question.questionType === "photo_request") {
+    return "요청하신 현장 사진 기준으로 답변합니다.";
+  }
+
+  return "지금 현장 상태를 확인했어요.";
+}
+
+function initialPolicyConsentAccepted() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.localStorage.getItem(policyConsentKey) === "accepted";
 }
 
 function minutesAgo(createdAt: string) {

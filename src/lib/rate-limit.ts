@@ -1,6 +1,6 @@
 import { ApiError } from "./errors.ts";
 
-type RateLimitAction = "create_report" | "create_question" | "flag_report";
+type RateLimitAction = "create_report" | "upload_report_photo" | "create_question" | "flag_report";
 
 type RateLimitRule = {
   limit: number;
@@ -9,6 +9,7 @@ type RateLimitRule = {
 
 const rules: Record<RateLimitAction, RateLimitRule> = {
   create_report: { limit: 12, windowMs: 60_000 },
+  upload_report_photo: { limit: 6, windowMs: 60_000 },
   create_question: { limit: 20, windowMs: 60_000 },
   flag_report: { limit: 8, windowMs: 60_000 },
 };

@@ -51,6 +51,8 @@ export type ReportDraft = {
   photoFile: File | null;
   photoPreviewUrl: string | null;
   locationVerified: boolean;
+  answerQuestionId: string | null;
+  answerQuestionBody: string | null;
   clientLocation: {
     latitude: number;
     longitude: number;

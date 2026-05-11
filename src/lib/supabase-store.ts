@@ -59,7 +59,13 @@ type QuestionRow = {
   question_type: QuestionType;
   body: string;
   credit_cost: 1 | 2;
+  answered_report_id: string | null;
   created_at: string;
+};
+
+type StalePhotoUploadRow = {
+  bucket_name: string;
+  photo_path: string;
 };
 
 type RpcReportPayload = {
@@ -204,6 +210,7 @@ export async function createReport(input: CreateReportInput, options: { request:
     p_photo_path: input.photoPath || null,
     p_verified_radius_m: verifiedRadiusM,
     p_location_verified: Boolean(verifiedRadiusM),
+    p_answer_question_id: input.answerQuestionId || null,
   });
 
   if (error) {
@@ -234,7 +241,7 @@ export async function listPublicQuestions(placeId?: string) {
   const supabase = createSupabaseServiceClient();
   let query = supabase
     .from("questions")
-    .select("id, place_id, question_type, body, credit_cost, created_at")
+    .select("id, place_id, question_type, body, credit_cost, answered_report_id, created_at")
     .order("created_at", { ascending: false });
 
   if (placeId) {
@@ -253,6 +260,7 @@ export async function listPublicQuestions(placeId?: string) {
     questionType: question.question_type,
     body: question.body,
     creditCost: question.credit_cost,
+    answeredReportId: question.answered_report_id,
     createdAt: question.created_at,
   }));
 }
@@ -409,6 +417,49 @@ export async function handleModerationAction(input: ModerationActionInput) {
     action: input.action,
     handledAt,
   };
+}
+
+export async function cleanupUnusedReportPhotos(before = new Date(Date.now() - 24 * 60 * 60 * 1000)) {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("list_stale_report_photo_uploads", {
+    p_before: before.toISOString(),
+  });
+
+  if (error) {
+    throwSupabaseError(error, "STALE_PHOTO_LOOKUP_FAILED", "미사용 사진 목록을 확인하지 못했습니다.");
+  }
+
+  const staleUploads = (data ?? []) as StalePhotoUploadRow[];
+  if (staleUploads.length === 0) {
+    return { deleted: 0 };
+  }
+
+  const pathsByBucket = new Map<string, string[]>();
+  for (const upload of staleUploads) {
+    const bucketPaths = pathsByBucket.get(upload.bucket_name) ?? [];
+    bucketPaths.push(upload.photo_path);
+    pathsByBucket.set(upload.bucket_name, bucketPaths);
+  }
+
+  for (const [bucketName, photoPaths] of pathsByBucket.entries()) {
+    const { error: removeError } = await supabase.storage.from(bucketName).remove(photoPaths);
+
+    if (removeError) {
+      throwSupabaseError(removeError, "STALE_PHOTO_DELETE_FAILED", "미사용 사진 파일을 삭제하지 못했습니다.");
+    }
+  }
+
+  const { error: deleteError } = await supabase
+    .from("report_photo_uploads")
+    .delete()
+    .in("photo_path", staleUploads.map((upload) => upload.photo_path))
+    .is("consumed_at", null);
+
+  if (deleteError) {
+    throwSupabaseError(deleteError, "STALE_PHOTO_RECORD_DELETE_FAILED", "미사용 사진 기록을 삭제하지 못했습니다.");
+  }
+
+  return { deleted: staleUploads.length };
 }
 
 async function findPlace(placeId: string) {
