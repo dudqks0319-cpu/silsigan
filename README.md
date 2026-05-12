@@ -29,14 +29,26 @@
 - 신규 사용자는 signup bonus RPC로 물어보기권을 1회 지급한다.
 - 제보/질문/신고/사진 업로드 API에는 기본 rate limit이 들어 있다.
 - 위치 권한 실패 시 데모 위치로 현장 인증하지 않고, 인증 없는 제보로 낮은 신뢰도 표시한다.
-- 사진 업로드는 `sharp`로 JPEG 재인코딩하고 원본 파일명/EXIF/GPS 저장을 피한 뒤 Supabase Storage에 UUID 경로로 저장한다.
+- 사진 업로드는 `Sharp`로 JPEG 재인코딩하고 원본 파일명/EXIF/GPS 저장을 피한 뒤 Supabase Storage에 UUID 경로로 저장한다.
 - 24시간 이상 제보에 연결되지 않은 사진 업로드를 정리하는 관리자 API가 있다.
 - 관리자 신고 큐는 `/admin/moderation`에 있으며 `ADMIN_MODERATION_TOKEN` 없이는 큐와 cleanup API를 공개하지 않는다.
 - 신고 숨김 처리 시 Storage 사진 삭제와 처리 로그 저장 흐름을 제공한다.
 - 지도는 네이버 지도 JavaScript API v3를 사용하며 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID`에 `ncpKeyId` 값을 넣으면 활성화된다.
 - 홈은 검색, 방금 올라온 현장, 사진 없는 상태 제보, 지금 많이 확인하는 곳, 답변 가능한 질문 중심의 한국 웹 베타 UX로 구성되어 있다.
+- `/api/place-context`는 오늘 날씨, 주변 관광/축제, 대기질, 주차 참고, 관광 관심도를 장소별 맥락 데이터로 제공한다.
+- 로컬/키 미설정 환경에서는 안전한 fallback 데이터를 사용하고, `PLACE_CONTEXT_EXTERNAL_APIS=true`와 서버 전용 키가 있으면 기상청 초단기예보, 한국관광공사 TourAPI, 에어코리아 API를 조회한다.
 - 공유는 Web Share API를 우선 사용하고, 미지원 브라우저는 클립보드 복사 또는 수동 복사 모달로 fallback한다.
 - 공유 URL은 `/share/[placeId]`에서 카카오톡/OG 메타를 제공한 뒤 `/?place=...&from=share`로 앱 장소 상세 진입을 유도한다.
+- 공유 관련 주요 행동은 `silsigan:analytics` CustomEvent hook으로 발행하며, 추후 PostHog/Vercel Analytics/Supabase event table에 연결할 수 있다.
+
+## 공공 API 연동 옵션
+
+- `PLACE_CONTEXT_EXTERNAL_APIS=true`: 서버에서 외부 공공 API 조회를 켠다. 기본값은 fallback 모드다.
+- `KOREA_DATA_API_KEY`: 공공데이터포털 공통 서비스 키 fallback.
+- `KMA_SHORT_TERM_SERVICE_KEY`: 기상청 단기예보/초단기예보 조회서비스 키. 없으면 `KOREA_DATA_API_KEY`를 사용한다.
+- `TOUR_API_SERVICE_KEY`: 한국관광공사 TourAPI 키. 없으면 `KOREA_DATA_API_KEY`를 사용한다.
+- `AIRKOREA_SERVICE_KEY`: 에어코리아 대기오염정보 키. 없으면 `KOREA_DATA_API_KEY`를 사용한다.
+- 지역별 공영주차장/관광 자원 수요는 공공 API 형태가 지역별로 달라 현재는 fallback 신호로 제공하며, 베타 운영 데이터가 쌓이면 서버 캐시 테이블과 연결한다.
 
 ## 개발 명령
 

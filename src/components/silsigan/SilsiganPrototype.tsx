@@ -5,8 +5,11 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
+  CircleParking,
+  CloudSun,
   Flag,
   LocateFixed,
+  MapPin,
   MessageCircleQuestion,
   Navigation,
   Search,
@@ -15,7 +18,9 @@ import {
   ShieldCheck,
   Sparkles,
   Ticket,
+  TrendingUp,
   Upload,
+  Wind,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
@@ -28,6 +33,7 @@ import type {
   ReportCategory,
   WeatherFeel,
 } from "@/lib/domain";
+import type { PlaceContext, PlaceContextMap } from "@/lib/place-context";
 import { crowdOptions, lineOptions, navItems, parkingOptions, questionTypes, weatherOptions } from "./mock-data";
 import type { Place, QuestionDraft, ReportDraft, TabId } from "./types";
 import { ActionButton, SegmentedControl, StatusPill } from "./ui";
@@ -75,6 +81,16 @@ type PublicQuestion = {
 type ConsentAction = "photo" | "location" | "report" | "question" | "flag";
 type NavigationProvider = "kakao" | "tmap";
 type NavigationIntentCounts = Record<string, number>;
+type ShareAnalyticsEvent =
+  | "share_button_clicked"
+  | "share_web_api_success"
+  | "share_clipboard_success"
+  | "share_manual_fallback_shown"
+  | "share_manual_select_clicked"
+  | "shared_link_opened"
+  | "shared_place_status_clicked"
+  | "shared_place_question_clicked"
+  | "shared_place_report_clicked";
 
 type PopularPlace = {
   place: Place;
@@ -146,6 +162,7 @@ export default function SilsiganPrototype() {
   const [questionsSubmitted, setQuestionsSubmitted] = useState(1);
   const [answersSubmitted, setAnswersSubmitted] = useState(0);
   const [navigationIntentByPlaceId, setNavigationIntentByPlaceId] = useState<NavigationIntentCounts>({});
+  const [placeContexts, setPlaceContexts] = useState<PlaceContextMap>({});
   const [flagged, setFlagged] = useState(false);
   const [toast, setToast] = useState("현장 인증 제보를 올리면 물어보기권을 받을 수 있어요.");
   const [loading, setLoading] = useState(true);
@@ -181,6 +198,13 @@ export default function SilsiganPrototype() {
       ]);
 
       const mappedPlaces = mapPlaces(placesResponse, reportsResponse, questionsResponse);
+      let contextResponse: PlaceContextMap = {};
+      try {
+        const placeIds = mappedPlaces.map((place) => place.id).join(",");
+        contextResponse = placeIds ? await fetchJson<PlaceContextMap>(`/api/place-context?placeIds=${encodeURIComponent(placeIds)}`) : {};
+      } catch {
+        contextResponse = {};
+      }
       const deepLinkedPlaceId = sharedPlaceIdFromUrl();
       const deepLinkedPlace = deepLinkedPlaceId
         ? mappedPlaces.find((place) => place.id === deepLinkedPlaceId)
@@ -189,11 +213,13 @@ export default function SilsiganPrototype() {
       setPlaces(mappedPlaces);
       setReports(reportsResponse);
       setQuestions(questionsResponse);
+      setPlaceContexts(contextResponse);
 
       if (deepLinkedPlace) {
         setSelectedPlaceId(deepLinkedPlace.id);
         setSharedPlaceId(deepLinkedPlace.id);
         setActiveTab("place");
+        trackShareEvent("shared_link_opened", { placeId: deepLinkedPlace.id });
         setToast("친구가 공유한 현장을 열었습니다. 출발 전 상태를 바로 확인해 보세요.");
         return;
       }
@@ -475,13 +501,16 @@ export default function SilsiganPrototype() {
   };
 
   const sharePlaceSnapshot = async (place: Place, placeReports: PublicReport[]) => {
-    const text = shareTextForPlace(place, placeReports);
+    const text = shareTextForPlace(place, placeReports, placeContexts[place.id]);
     const url = `${window.location.origin}/share/${encodeURIComponent(place.id)}`;
     const sharePayload = `${text}\n${url}`;
     const showManualShareFallback = () => {
       setManualShareText(sharePayload);
+      trackShareEvent("share_manual_fallback_shown", { placeId: place.id });
       setToast("공유 문구를 직접 복사해 카카오톡에 붙여 넣어 주세요.");
     };
+
+    trackShareEvent("share_button_clicked", { placeId: place.id });
 
     try {
       if (navigator.share) {
@@ -490,12 +519,14 @@ export default function SilsiganPrototype() {
           text,
           url,
         });
+        trackShareEvent("share_web_api_success", { placeId: place.id });
         setToast("공유 카드를 열었습니다. 카카오톡으로 보내면 바로 현장 확인을 유도할 수 있어요.");
         return;
       }
 
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(sharePayload);
+        trackShareEvent("share_clipboard_success", { placeId: place.id });
         setToast("카카오톡에 붙여 넣을 공유 카드 문구를 복사했습니다.");
         return;
       }
@@ -542,6 +573,7 @@ export default function SilsiganPrototype() {
               {activeTab === "home" && (
                 <HomeScreen
                   places={places}
+                  placeContexts={placeContexts}
                   questions={questions}
                   reports={reports}
                   navigationIntentByPlaceId={navigationIntentByPlaceId}
@@ -561,8 +593,19 @@ export default function SilsiganPrototype() {
                   onGoReport={() => setActiveTab("report")}
                   onNavigateIntent={openNavigationIntent}
                   onSharePlace={sharePlaceSnapshot}
+                  onViewSharedStatus={() => {
+                    setSharedPlaceId(null);
+                    setToast("아래에서 최근 현장 제보와 신뢰 정보를 계속 확인해 주세요.");
+                    window.requestAnimationFrame(() => {
+                      document.getElementById("place-current-status")?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    });
+                  }}
                   isSharedLanding={sharedPlaceId === selectedPlace.id}
                   place={selectedPlace}
+                  placeContext={placeContexts[selectedPlace.id]}
                   questions={selectedQuestions}
                   reports={selectedReports}
                 />
@@ -636,6 +679,7 @@ function TopBar({ toast }: { toast: string }) {
 
 function HomeScreen({
   places,
+  placeContexts,
   questions,
   reports,
   navigationIntentByPlaceId,
@@ -645,6 +689,7 @@ function HomeScreen({
   onSelectPlace,
 }: {
   places: Place[];
+  placeContexts: PlaceContextMap;
   questions: PublicQuestion[];
   reports: PublicReport[];
   navigationIntentByPlaceId: NavigationIntentCounts;
@@ -660,7 +705,7 @@ function HomeScreen({
   const statusReports = recentReports.filter((report) => !report.photoUrl).slice(0, 3);
   const featuredReport = photoReports[0];
   const featuredPlace = featuredReport ? places.find((candidate) => candidate.id === featuredReport.placeId) : null;
-  const popularPlaces = getPopularPlaces(places, reports, questions, navigationIntentByPlaceId).slice(0, 4);
+  const popularPlaces = getPopularPlaces(places, reports, questions, navigationIntentByPlaceId, placeContexts).slice(0, 4);
 
   return (
     <div className="screen-stack">
@@ -690,6 +735,7 @@ function HomeScreen({
         <h2>출발 전 10초, 지금 현장 먼저 확인.</h2>
         <p>사람 많은지, 주차 되는지, 줄 서야 하는지 방금 올라온 현장으로 확인하세요.</p>
       </section>
+      <TodayContextStrip contexts={placeContexts} onSelectPlace={onSelectPlace} places={places} />
 
       <section className="section-block">
         <div className="section-title">
@@ -770,6 +816,58 @@ function HomeScreen({
       <PlaceCarousel title="지금 혼잡한 곳" places={busyPlaces} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 한산한 곳" places={calmPlaces} onSelectPlace={onSelectPlace} />
     </div>
+  );
+}
+
+function TodayContextStrip({
+  contexts,
+  onSelectPlace,
+  places,
+}: {
+  contexts: PlaceContextMap;
+  onSelectPlace: (place: Place) => void;
+  places: Place[];
+}) {
+  const contextItems = places
+    .map((place) => ({ place, context: contexts[place.id] }))
+    .filter((item): item is { place: Place; context: PlaceContext } => Boolean(item.context))
+    .sort((left, right) => contextPriority(right.context) - contextPriority(left.context))
+    .slice(0, 3);
+
+  if (contextItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="today-context-card" aria-label="오늘 가기 전 체크">
+      <div className="section-title">
+        <h2>오늘 가기 전 체크</h2>
+        <span>날씨·관광·주차</span>
+      </div>
+      <div className="today-context-list">
+        {contextItems.map(({ context, place }) => (
+          <button className="today-context-item" key={place.id} onClick={() => onSelectPlace(place)} type="button">
+            <WeatherBadge context={context} />
+            <div>
+              <strong>{place.name}</strong>
+              <p>{context.weather.summary}</p>
+              <span>
+                {context.tourismDemand.label} · 대기질 {context.airQuality.grade}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WeatherBadge({ context }: { context: PlaceContext }) {
+  return (
+    <span className={`weather-badge weather-badge--${context.weather.alertLevel}`}>
+      <CloudSun size={16} />
+      {context.weather.shortLabel}
+    </span>
   );
 }
 
@@ -1000,8 +1098,10 @@ function PlaceScreen({
   onGoReport,
   onNavigateIntent,
   onSharePlace,
+  onViewSharedStatus,
   isSharedLanding,
   place,
+  placeContext,
   questions,
   reports,
 }: {
@@ -1012,8 +1112,10 @@ function PlaceScreen({
   onGoReport: () => void;
   onNavigateIntent: (provider: NavigationProvider, place: Place) => void;
   onSharePlace: (place: Place, reports: PublicReport[]) => void;
+  onViewSharedStatus: () => void;
   isSharedLanding: boolean;
   place: Place;
+  placeContext: PlaceContext | undefined;
   questions: PublicQuestion[];
   reports: PublicReport[];
 }) {
@@ -1030,10 +1132,11 @@ function PlaceScreen({
           lastVerifiedReport={lastVerifiedReport}
           onGoQuestion={onGoQuestion}
           onGoReport={onGoReport}
+          onViewStatus={onViewSharedStatus}
           place={place}
         />
       )}
-      <section className="detail-hero">
+      <section className="detail-hero" id="place-current-status">
         <div className={`go-signal go-signal--${signalClass(place.goSignal)}`}>{place.goSignal}</div>
         <StatusPill level={place.crowdLevel} label={place.status} />
         <h2>{place.name}</h2>
@@ -1050,6 +1153,8 @@ function PlaceScreen({
           <span>날씨 {place.weather}</span>
         </div>
       </section>
+
+      {placeContext && <PlaceContextPanel context={placeContext} />}
 
       <section className="trust-metrics-card" aria-label="장소 신뢰 정보">
         <div>
@@ -1149,7 +1254,7 @@ function PlaceScreen({
           </button>
         </div>
       </section>
-      <ShareSnapshotCard onShare={() => onSharePlace(place, reports)} place={place} reports={reports} />
+      <ShareSnapshotCard context={placeContext} onShare={() => onSharePlace(place, reports)} place={place} reports={reports} />
       <ActionButton onClick={onFlag} variant="danger" disabled={flagged}>
         <Flag size={18} />
         {flagged ? "신고 접수됨" : "문제 있는 제보 신고"}
@@ -1158,17 +1263,101 @@ function PlaceScreen({
   );
 }
 
+function PlaceContextPanel({ context }: { context: PlaceContext }) {
+  return (
+    <section className="place-context-panel" aria-label="오늘 날씨와 주변 맥락">
+      <div className="section-title">
+        <h2>오늘 날씨와 주변 맥락</h2>
+        <span>공공 API 보강</span>
+      </div>
+      <div className="context-primary">
+        <div>
+          <WeatherBadge context={context} />
+          <strong>{context.weather.summary}</strong>
+          <span>
+            {context.weather.temperatureC === null ? "기온 확인 중" : `${Math.round(context.weather.temperatureC)}도`} ·{" "}
+            {context.weather.updatedAt}
+          </span>
+        </div>
+      </div>
+      <div className="context-grid">
+        <article>
+          <Wind size={18} />
+          <strong>대기질 {context.airQuality.grade}</strong>
+          <p>{context.airQuality.summary}</p>
+          <small>{context.airQuality.source}</small>
+        </article>
+        <article>
+          <CircleParking size={18} />
+          <strong>주차 참고</strong>
+          <p>{context.parking.summary}</p>
+          <small>{context.parking.source}</small>
+        </article>
+        <article>
+          <TrendingUp size={18} />
+          <strong>{context.tourismDemand.label}</strong>
+          <p>{context.tourismDemand.summary}</p>
+          <small>{context.tourismDemand.source}</small>
+        </article>
+      </div>
+      {context.nearbyAttractions.length > 0 && (
+        <div className="nearby-attraction-list">
+          <div className="section-title">
+            <h3>근처 함께 볼 곳</h3>
+            <span>TourAPI</span>
+          </div>
+          {context.nearbyAttractions.slice(0, 3).map((item) => (
+            <article key={`${item.title}-${item.distanceLabel}`}>
+              <MapPin size={17} />
+              <div>
+                <strong>{item.title}</strong>
+                <p>
+                  {item.kind} · {item.distanceLabel} · {item.summary}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {context.parking.lots.length > 0 && (
+        <div className="parking-lot-row" aria-label="주변 주차 참고">
+          {context.parking.lots.slice(0, 2).map((lot) => (
+            <span key={lot.name}>
+              {lot.name} · {lot.spacesLabel}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SharedLandingCard({
   lastVerifiedReport,
   onGoQuestion,
   onGoReport,
+  onViewStatus,
   place,
 }: {
   lastVerifiedReport: PublicReport | undefined;
   onGoQuestion: () => void;
   onGoReport: () => void;
+  onViewStatus: () => void;
   place: Place;
 }) {
+  const viewStatus = () => {
+    trackShareEvent("shared_place_status_clicked", { placeId: place.id });
+    onViewStatus();
+  };
+  const askQuestion = () => {
+    trackShareEvent("shared_place_question_clicked", { placeId: place.id });
+    onGoQuestion();
+  };
+  const reportStatus = () => {
+    trackShareEvent("shared_place_report_clicked", { placeId: place.id });
+    onGoReport();
+  };
+
   return (
     <section className="shared-landing-card" aria-label="공유된 현장">
       <p className="eyebrow">친구가 공유한 현장</p>
@@ -1178,11 +1367,14 @@ function SharedLandingCard({
       <span>{place.goSignal}</span>
       <p>{lastVerifiedReport ? reportMetaLine(lastVerifiedReport) : "최근 현장 인증을 기다리고 있습니다."}</p>
       <div className="shared-landing-actions">
-        <button onClick={onGoReport} type="button">
-          출발 전 확인하기
+        <button onClick={viewStatus} type="button">
+          지금 상태 더 보기
         </button>
-        <button onClick={onGoQuestion} type="button">
+        <button onClick={askQuestion} type="button">
           여기 지금 어때요?
+        </button>
+        <button className="shared-landing-report-button" onClick={reportStatus} type="button">
+          현장에 있다면 지금 상황 알려주기
         </button>
       </div>
     </section>
@@ -1190,15 +1382,17 @@ function SharedLandingCard({
 }
 
 function ShareSnapshotCard({
+  context,
   onShare,
   place,
   reports,
 }: {
+  context: PlaceContext | undefined;
   onShare: () => void;
   place: Place;
   reports: PublicReport[];
 }) {
-  const [title, placeName, signal, stateSummary, freshness, action] = shareCardLines(place, reports);
+  const [title, placeName, signal, stateSummary, freshness, action] = shareCardLines(place, reports, context);
 
   return (
     <section className="share-card" aria-label="카카오톡 공유 카드">
@@ -1624,16 +1818,26 @@ function PolicyConsentModal({
 }
 
 function ManualShareSheet({ onClose, text }: { onClose: () => void; text: string }) {
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const selectShareText = () => {
+    textAreaRef.current?.focus();
+    textAreaRef.current?.select();
+    trackShareEvent("share_manual_select_clicked");
+  };
+
   return (
     <div className="policy-modal-backdrop" role="presentation">
       <section className="policy-modal manual-share-sheet" role="dialog" aria-modal="true" aria-label="공유 문구 직접 복사">
         <p className="eyebrow">공유 문구</p>
         <h2>카카오톡에 붙여 넣어 주세요</h2>
         <p>이 브라우저에서는 자동 복사를 사용할 수 없어 공유 문구를 직접 보여드립니다.</p>
-        <textarea readOnly value={text} />
+        <textarea readOnly ref={textAreaRef} value={text} />
         <div className="policy-modal-actions">
           <button onClick={onClose} type="button">
             닫기
+          </button>
+          <button onClick={selectShareText} type="button">
+            전체 선택
           </button>
         </div>
       </section>
@@ -1729,6 +1933,7 @@ function getPopularPlaces(
   reports: PublicReport[],
   questions: PublicQuestion[],
   navigationIntentByPlaceId: NavigationIntentCounts,
+  contexts: PlaceContextMap,
 ): PopularPlace[] {
   return places
     .map((place) => {
@@ -1738,13 +1943,17 @@ function getPopularPlaces(
       const photoReportCount = placeReports.filter((report) => report.photoUrl).length;
       const navigationIntentCount = navigationIntentByPlaceId[place.id] ?? 0;
       const urgencyBonus = place.crowdLevel === "busy" || place.crowdLevel === "packed" || place.parking === "만차" ? 2 : 0;
+      const context = contexts[place.id];
+      const contextBonus =
+        (context?.tourismDemand.level === "high" ? 2 : 0) + (context?.weather.alertLevel === "warning" ? 1 : 0);
       const score =
         placeReports.length * 3 +
         photoReportCount * 2 +
         pendingQuestionCount * 2 +
         placeQuestions.length +
         navigationIntentCount * 2 +
-        urgencyBonus;
+        urgencyBonus +
+        contextBonus;
 
       return {
         place,
@@ -1753,16 +1962,18 @@ function getPopularPlaces(
         pendingQuestionCount,
         photoReportCount,
         navigationIntentCount,
-        summary: popularSummary(place, photoReportCount),
-        reason: popularReason(placeReports.length, pendingQuestionCount, photoReportCount, navigationIntentCount),
+        summary: popularSummary(place, photoReportCount, context),
+        reason: popularReason(placeReports.length, pendingQuestionCount, photoReportCount, navigationIntentCount, context),
       };
     })
     .filter((item) => item.score > 0)
     .sort((left, right) => right.score - left.score || left.place.name.localeCompare(right.place.name, "ko"));
 }
 
-function popularSummary(place: Place, photoReportCount: number) {
-  return `사람 ${place.status} · 주차 ${place.parking} · 사진 제보 ${photoReportCount}건`;
+function popularSummary(place: Place, photoReportCount: number, context: PlaceContext | undefined) {
+  const weatherLabel = context ? ` · ${context.weather.shortLabel}` : "";
+
+  return `사람 ${place.status} · 주차 ${place.parking} · 사진 제보 ${photoReportCount}건${weatherLabel}`;
 }
 
 function popularReason(
@@ -1770,6 +1981,7 @@ function popularReason(
   pendingQuestionCount: number,
   photoReportCount: number,
   navigationIntentCount: number,
+  context: PlaceContext | undefined,
 ) {
   if (navigationIntentCount > 0) {
     return `방금 길찾기 관심 ${navigationIntentCount}회`;
@@ -1783,7 +1995,19 @@ function popularReason(
     return `사진 있는 현장 제보 ${photoReportCount}건`;
   }
 
+  if (context?.tourismDemand.level === "high") {
+    return context.tourismDemand.label;
+  }
+
   return `최근 제보 ${reportCount}건`;
+}
+
+function contextPriority(context: PlaceContext) {
+  const weather = context.weather.alertLevel === "warning" ? 4 : context.weather.alertLevel === "watch" ? 2 : 0;
+  const demand = context.tourismDemand.level === "high" ? 2 : context.tourismDemand.level === "normal" ? 1 : 0;
+  const air = context.airQuality.grade === "나쁨" || context.airQuality.grade === "매우 나쁨" ? 2 : 0;
+
+  return weather + demand + air;
 }
 
 function isRenderablePhotoUrl(photoUrl: string | null) {
@@ -1810,23 +2034,28 @@ function navigationUrlForPlace(provider: NavigationProvider, place: Place) {
   return `https://www.tmap.co.kr/search?query=${encodedName}`;
 }
 
-function shareCardLines(place: Place, reports: PublicReport[]): [string, string, string, string, string, string] {
+function shareCardLines(
+  place: Place,
+  reports: PublicReport[],
+  context?: PlaceContext,
+): [string, string, string, string, string, string] {
   const latestVerifiedReport = reports.find((report) => report.locationVerified);
   const latestReport = latestVerifiedReport ?? reports[0];
   const freshness = latestReport ? reportMetaLine(latestReport) : "최근 현장 제보 대기 중";
+  const weatherLine = context ? ` · ${context.weather.shortLabel}` : "";
 
   return [
     "#실시간 현장 제보",
     place.name,
     place.goSignal,
-    `주차 ${place.parking} · 사람 ${place.status}`,
+    `주차 ${place.parking} · 사람 ${place.status}${weatherLine}`,
     freshness,
     "출발 전 확인하기",
   ];
 }
 
-function shareTextForPlace(place: Place, reports: PublicReport[]) {
-  return shareCardLines(place, reports).join("\n");
+function shareTextForPlace(place: Place, reports: PublicReport[], context?: PlaceContext) {
+  return shareCardLines(place, reports, context).join("\n");
 }
 
 function sharedPlaceIdFromUrl() {
@@ -1835,6 +2064,22 @@ function sharedPlaceIdFromUrl() {
   }
 
   return new URLSearchParams(window.location.search).get("place");
+}
+
+function trackShareEvent(eventName: ShareAnalyticsEvent, properties: Record<string, string | number | boolean | null> = {}) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("silsigan:analytics", {
+      detail: {
+        eventName,
+        properties,
+        createdAt: new Date().toISOString(),
+      },
+    }),
+  );
 }
 
 function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: PublicQuestion[]): Place[] {

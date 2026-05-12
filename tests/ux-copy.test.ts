@@ -47,6 +47,8 @@ test("home prioritizes search, live photos, status reports, and internal popular
     "사진 없는 상태 제보",
     "지금 많이 확인하는 곳",
     "최근 3시간 제보/질문 기준",
+    "오늘 가기 전 체크",
+    "날씨·관광·주차",
     "지도는 위치를 알려주고",
   ]) {
     assert.match(source, new RegExp(label));
@@ -58,6 +60,37 @@ test("home prioritizes search, live photos, status reports, and internal popular
   assert.match(source, /reportMetaLine/);
   assert.match(source, /verificationToneClass/);
   assert.match(source, /getPopularPlaces/);
+  assert.match(source, /\/api\/place-context/);
+  assert.match(source, /TodayContextStrip/);
+});
+
+test("place detail uses public context APIs as decision support", async () => {
+  const source = await readFile(new URL("../src/components/silsigan/SilsiganPrototype.tsx", import.meta.url), "utf8");
+  const context = await readFile(new URL("../src/lib/place-context.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../src/app/api/place-context/route.ts", import.meta.url), "utf8");
+
+  for (const label of [
+    "오늘 날씨와 주변 맥락",
+    "공공 API 보강",
+    "오늘 날씨",
+    "근처 함께 볼 곳",
+    "대기질",
+    "주차 참고",
+    "관광 관심도",
+  ]) {
+    assert.match(source + context, new RegExp(label));
+  }
+
+  assert.match(route, /getPlaceContexts/);
+  assert.match(context, /KMA_SHORT_TERM_SERVICE_KEY/);
+  assert.match(context, /TOUR_API_SERVICE_KEY/);
+  assert.match(context, /AIRKOREA_SERVICE_KEY/);
+  assert.match(context, /PLACE_CONTEXT_EXTERNAL_APIS/);
+  assert.match(context, /기상청 초단기예보/);
+  assert.match(context, /한국관광공사 TourAPI/);
+  assert.match(context, /에어코리아/);
+  assert.match(context, /부산 공영주차장 API fallback/);
+  assert.match(context, /관광 자원 수요/);
 });
 
 test("place detail exposes navigation intent and answer completion feedback", async () => {
@@ -72,6 +105,8 @@ test("place detail exposes navigation intent and answer completion feedback", as
     "카카오톡 공유 카드",
     "#실시간 현장 제보",
     "출발 전 확인하기",
+    "지금 상태 더 보기",
+    "현장에 있다면 지금 상황 알려주기",
     "친구가 공유한 현장",
     "질문자에게 전달됐습니다",
   ]) {
@@ -86,6 +121,15 @@ test("place detail exposes navigation intent and answer completion feedback", as
   assert.match(source, /setActiveTab\("place"\)/);
   assert.match(source, /navigator\.clipboard\?\.writeText/);
   assert.match(source, /ManualShareSheet/);
+  assert.match(source, /전체 선택/);
+  assert.match(source, /silsigan:analytics/);
+  assert.match(source, /share_button_clicked/);
+  assert.match(source, /share_web_api_success/);
+  assert.match(source, /share_clipboard_success/);
+  assert.match(source, /share_manual_fallback_shown/);
+  assert.match(source, /shared_link_opened/);
+  assert.match(source, /shared_place_question_clicked/);
+  assert.match(source, /shared_place_report_clicked/);
   assert.match(source, /\/share\/\$\{encodeURIComponent\(place\.id\)\}/);
 });
 
@@ -101,6 +145,20 @@ test("share route provides OG metadata and redirects users into the app place de
   assert.match(image, /ImageResponse/);
   assert.match(previews, /busan-gwangalli/);
   assert.match(previews, /8분 전 · 현장 인증 · 사진 있음/);
+});
+
+test("README reflects the current beta backend and share tracking state", async () => {
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+
+  assert.match(readme, /Supabase Auth 익명 세션/);
+  assert.match(readme, /RPC 트랜잭션/);
+  assert.match(readme, /Storage/);
+  assert.match(readme, /Sharp/);
+  assert.match(readme, /\/share\/\[placeId\]/);
+  assert.match(readme, /silsigan:analytics/);
+  assert.match(readme, /\/api\/place-context/);
+  assert.match(readme, /기상청/);
+  assert.match(readme, /TourAPI/);
 });
 
 test("first-use consent modal covers terms, privacy, location, and photo policy", async () => {
