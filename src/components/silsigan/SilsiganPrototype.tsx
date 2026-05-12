@@ -5,12 +5,12 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
-  Clock3,
   Flag,
   LocateFixed,
   MessageCircleQuestion,
   Navigation,
   Search,
+  Share2,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -83,6 +83,7 @@ type PopularPlace = {
   pendingQuestionCount: number;
   photoReportCount: number;
   navigationIntentCount: number;
+  summary: string;
   reason: string;
 };
 
@@ -122,10 +123,13 @@ const initialQuestion: QuestionDraft = {
 const policyConsentKey = ["silsigan", "policy", "consent", "v1"].join("_");
 
 const searchSuggestions: SearchSuggestion[] = [
-  { label: "울산 태화강", placeId: "ulsan-taehwagang" },
+  { label: "태화강 주차", placeId: "ulsan-taehwagang" },
+  { label: "광안리 사람 많음", placeId: "busan-gwangalli" },
+  { label: "황리단길 웨이팅", placeId: "gyeongju-hwangridan" },
+  { label: "울산시청 민원", placeId: "ulsan-city-hall" },
   { label: "광안리 주차", placeId: "busan-gwangalli" },
   { label: "황리단길 줄", placeId: "gyeongju-hwangridan" },
-  { label: "시청 민원 대기", placeId: "ulsan-city-hall" },
+  { label: "관공서 대기", placeId: "ulsan-city-hall" },
 ];
 
 export default function SilsiganPrototype() {
@@ -453,6 +457,33 @@ export default function SilsiganPrototype() {
     setToast(`${providerLabel} 길찾기를 열었습니다. 이 관심도는 지금 많이 확인하는 곳에 반영됩니다.`);
   };
 
+  const sharePlaceSnapshot = async (place: Place, placeReports: PublicReport[]) => {
+    const text = shareTextForPlace(place, placeReports);
+    const url = `${window.location.origin}/?place=${encodeURIComponent(place.id)}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "#실시간 현장 제보",
+          text,
+          url,
+        });
+        setToast("공유 카드를 열었습니다. 카카오톡으로 보내면 바로 현장 확인을 유도할 수 있어요.");
+        return;
+      }
+
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setToast("카카오톡에 붙여 넣을 공유 카드 문구를 복사했습니다.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setToast("공유를 취소했습니다.");
+        return;
+      }
+
+      setToast("공유를 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  };
+
   const handlePhotoChange = (file: File | null) => {
     if (!file) {
       return;
@@ -502,6 +533,7 @@ export default function SilsiganPrototype() {
                   onGoQuestion={() => setActiveTab("question")}
                   onGoReport={() => setActiveTab("report")}
                   onNavigateIntent={openNavigationIntent}
+                  onSharePlace={sharePlaceSnapshot}
                   place={selectedPlace}
                   questions={selectedQuestions}
                   reports={selectedReports}
@@ -613,12 +645,22 @@ function HomeScreen({
           const place = places.find((candidate) => candidate.id === suggestion.placeId);
 
           return (
-            <button disabled={!place} key={suggestion.placeId} onClick={() => place && onSelectPlace(place)} type="button">
+            <button
+              disabled={!place}
+              key={`${suggestion.placeId}-${suggestion.label}`}
+              onClick={() => place && onSelectPlace(place)}
+              type="button"
+            >
               {suggestion.label}
             </button>
           );
         })}
       </div>
+      <section className="home-brand-card" aria-label="서비스 핵심 메시지">
+        <p className="eyebrow">출발 전 확인</p>
+        <h2>출발 전 10초, 지금 현장 먼저 확인.</h2>
+        <p>사람 많은지, 주차 되는지, 줄 서야 하는지 방금 올라온 현장으로 확인하세요.</p>
+      </section>
 
       <section className="section-block">
         <div className="section-title">
@@ -629,14 +671,13 @@ function HomeScreen({
           <button className="featured-live-card" onClick={() => onSelectPlace(featuredPlace)} type="button">
             <div className="featured-live-photo" style={photoBackgroundStyle(featuredReport.photoUrl)}>
               {!isRenderablePhotoUrl(featuredReport.photoUrl) && <Camera size={28} />}
-              <span>{verificationLabel(featuredReport)}</span>
+              <span className={trustBadgeClass(featuredReport)}>{verificationLabel(featuredReport)}</span>
             </div>
             <div>
               <strong>{featuredPlace.name}</strong>
               <p>{featuredReport.comment ?? "현장 상태가 업데이트됐습니다."}</p>
-              <span>
-                {minutesAgo(featuredReport.createdAt)} · 현장 사진 · {crowdLabels[featuredReport.crowdLevel]}
-              </span>
+              <span className="report-meta-line">{reportMetaLine(featuredReport)}</span>
+              <ReportStateChips report={featuredReport} />
             </div>
           </button>
         )}
@@ -651,7 +692,8 @@ function HomeScreen({
                 <div>
                   <strong>{place?.name ?? "현장"}</strong>
                   <p>{report.comment ?? "현장 상태가 업데이트됐습니다."}</p>
-                  <span>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · 현장 사진</span>
+                  <span className="report-meta-line">{reportMetaLine(report)}</span>
+                  <ReportStateChips report={report} />
                 </div>
               </button>
             );
@@ -683,7 +725,7 @@ function HomeScreen({
         <div>
           <p className="eyebrow">내주변 지도</p>
           <h2>지도는 필터로 빠르게 확인하세요</h2>
-          <p>주차, 줄, 혼잡, 한산, 사진 있는 제보만 골라 볼 수 있습니다.</p>
+          <p>지도는 위치를 알려주고, #실시간은 지금 상태를 알려줍니다.</p>
         </div>
         <div className="teaser-actions">
           <button onClick={onGoMap} type="button">
@@ -696,33 +738,9 @@ function HomeScreen({
           </button>
         </div>
       </section>
-      <QuickStats />
-      <PlaceCarousel title="지금 물어본 곳" places={places} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 혼잡한 곳" places={busyPlaces} onSelectPlace={onSelectPlace} />
       <PlaceCarousel title="지금 한산한 곳" places={calmPlaces} onSelectPlace={onSelectPlace} />
     </div>
-  );
-}
-
-function QuickStats() {
-  return (
-    <section className="quick-grid" aria-label="서비스 핵심 상태">
-      <div>
-        <Clock3 size={18} />
-        <strong>3시간</strong>
-        <span>제보 자동 만료</span>
-      </div>
-      <div>
-        <Ticket size={18} />
-        <strong>3개</strong>
-        <span>가입 물어보기권</span>
-      </div>
-      <div>
-        <BadgeCheck size={18} />
-        <strong>비공개</strong>
-        <span>개인 위치</span>
-      </div>
-    </section>
   );
 }
 
@@ -743,14 +761,21 @@ function StatusReportCard({
       <div>
         <strong>{place.name}</strong>
         <p>{report.comment ?? "사진 없이 상태만 빠르게 올라왔습니다."}</p>
-        <div className="state-chip-row">
-          <span>사람 {crowdLabels[report.crowdLevel]}</span>
-          <span>줄 {lineLabels[report.lineStatus]}</span>
-          <span>주차 {parkingLabels[report.parkingStatus]}</span>
-          <span>{verificationLabel(report)}</span>
-        </div>
+        <span className="report-meta-line">{reportMetaLine(report)}</span>
+        <ReportStateChips report={report} />
       </div>
     </button>
+  );
+}
+
+function ReportStateChips({ report }: { report: PublicReport }) {
+  return (
+    <div className="state-chip-row">
+      <span>사람 {crowdLabels[report.crowdLevel]}</span>
+      <span>줄 {lineLabels[report.lineStatus]}</span>
+      <span>주차 {parkingLabels[report.parkingStatus]}</span>
+      <span className={trustBadgeClass(report)}>{verificationLabel(report)}</span>
+    </div>
   );
 }
 
@@ -769,7 +794,7 @@ function PopularPlaces({
     <section className="section-block">
       <div className="section-title">
         <h2>지금 많이 확인하는 곳</h2>
-        <span>최근 3시간</span>
+        <span>최근 3시간 제보/질문 기준</span>
       </div>
       <div className="popular-place-list">
         {items.map((item, index) => (
@@ -777,7 +802,8 @@ function PopularPlaces({
             <span className="popular-rank">{index + 1}</span>
             <div>
               <strong>{item.place.name}</strong>
-              <p>{item.reason}</p>
+              <p>{item.summary}</p>
+              <span className="popular-reason">{item.reason}</span>
               <div className="popular-signal-row">
                 <span>제보 {item.reportCount}</span>
                 <span>질문 {item.pendingQuestionCount}</span>
@@ -944,6 +970,7 @@ function PlaceScreen({
   onGoQuestion,
   onGoReport,
   onNavigateIntent,
+  onSharePlace,
   place,
   questions,
   reports,
@@ -954,6 +981,7 @@ function PlaceScreen({
   onGoQuestion: () => void;
   onGoReport: () => void;
   onNavigateIntent: (provider: NavigationProvider, place: Place) => void;
+  onSharePlace: (place: Place, reports: PublicReport[]) => void;
   place: Place;
   questions: PublicQuestion[];
   reports: PublicReport[];
@@ -1003,24 +1031,6 @@ function PlaceScreen({
         </div>
       </section>
 
-      <section className="nav-cta-card" aria-label="길찾기">
-        <div>
-          <p className="eyebrow">가기 전 마지막 확인</p>
-          <strong>길찾기 전에 현장 상태를 같이 보세요</strong>
-          <span>길찾기 클릭은 지금 많이 확인하는 곳 신호로 반영됩니다.</span>
-        </div>
-        <div className="nav-cta-actions">
-          <button onClick={() => onNavigateIntent("kakao", place)} type="button">
-            <Navigation size={17} />
-            카카오내비로 길찾기
-          </button>
-          <button onClick={() => onNavigateIntent("tmap", place)} type="button">
-            <Navigation size={17} />
-            티맵으로 길찾기
-          </button>
-        </div>
-      </section>
-
       {isSensitive && <SensitiveWarning />}
 
       <section className="photo-strip" aria-label="최근 현장 사진">
@@ -1064,7 +1074,7 @@ function PlaceScreen({
                 <strong>{question.body}</strong>
                 <p>
                   {questionTypeLabels[question.questionType]} · {minutesAgo(question.createdAt)} ·{" "}
-                  {question.answeredReportId ? "답변 완료" : "답변 대기"}
+                  {question.answeredReportId ? "답변 완료" : "근처 사용자에게 물어보는 중"}
                 </p>
                 {!question.answeredReportId && (
                   <button className="inline-answer-button" onClick={() => onAnswerQuestion(question)} type="button">
@@ -1083,11 +1093,62 @@ function PlaceScreen({
           여기 지금 어때요?
         </ActionButton>
       </div>
+      <section className="nav-cta-card" aria-label="길찾기">
+        <div>
+          <p className="eyebrow">가기 전 마지막 확인</p>
+          <strong>길찾기 전에 현장 상태를 같이 보세요</strong>
+          <span>길찾기 클릭은 지금 많이 확인하는 곳 신호로 반영됩니다.</span>
+        </div>
+        <div className="nav-cta-actions">
+          <button onClick={() => onNavigateIntent("kakao", place)} type="button">
+            <Navigation size={17} />
+            카카오내비로 길찾기
+          </button>
+          <button onClick={() => onNavigateIntent("tmap", place)} type="button">
+            <Navigation size={17} />
+            티맵으로 길찾기
+          </button>
+        </div>
+      </section>
+      <ShareSnapshotCard onShare={() => onSharePlace(place, reports)} place={place} reports={reports} />
       <ActionButton onClick={onFlag} variant="danger" disabled={flagged}>
         <Flag size={18} />
         {flagged ? "신고 접수됨" : "문제 있는 제보 신고"}
       </ActionButton>
     </div>
+  );
+}
+
+function ShareSnapshotCard({
+  onShare,
+  place,
+  reports,
+}: {
+  onShare: () => void;
+  place: Place;
+  reports: PublicReport[];
+}) {
+  const [title, placeName, signal, stateSummary, freshness, action] = shareCardLines(place, reports);
+
+  return (
+    <section className="share-card" aria-label="카카오톡 공유 카드">
+      <div className="section-title">
+        <h2>카카오톡 공유 카드</h2>
+        <span>친구에게 보내기</span>
+      </div>
+      <div className="share-preview-card">
+        <p>{title}</p>
+        <strong>{placeName}</strong>
+        <span>{signal}</span>
+        <em>{stateSummary}</em>
+        <small>{freshness}</small>
+        <b>{action}</b>
+      </div>
+      <button className="share-button" onClick={onShare} type="button">
+        <Share2 size={17} />
+        카카오톡으로 공유
+      </button>
+    </section>
   );
 }
 
@@ -1116,6 +1177,7 @@ function SensitiveWorkflowCard() {
 function RewardPolicyCard({ answeringQuestion }: { answeringQuestion: boolean }) {
   return (
     <section className="reward-policy-card" aria-label="제보 보상 정책">
+      <p className="reward-policy-lead">현장을 알려주면 물어볼 수 있어요.</p>
       <div>
         <strong>현장 인증 + 사진</strong>
         <span>물어보기권 +2</span>
@@ -1210,12 +1272,12 @@ function ReportScreen({
         <section className="answer-target-card">
           <MessageCircleQuestion size={20} />
           <div>
-            <strong>현장 답변하기 +2</strong>
-            <p>{draft.answerQuestionBody}</p>
+            <p className="eyebrow">답변 중인 질문</p>
+            <strong>“{draft.answerQuestionBody}”</strong>
+            <p>현장 인증 후 답변하면 물어보기권 2개(+2)</p>
           </div>
         </section>
       )}
-      <RewardPolicyCard answeringQuestion={Boolean(draft.answerQuestionId)} />
       {isSensitive && <SensitiveWarning />}
       {isSensitive && <SensitiveWorkflowCard />}
       <input
@@ -1274,6 +1336,7 @@ function ReportScreen({
           </p>
         </div>
       </button>
+      <RewardPolicyCard answeringQuestion={Boolean(draft.answerQuestionId)} />
       {draft.locationVerified ? (
         <ActionButton disabled={isSubmitting} onClick={onSubmit} type="button">
           {isSubmitting ? "올리는 중..." : "현장 인증으로 올리기"}
@@ -1332,6 +1395,7 @@ function QuestionScreen({
           <p>이번 물어보기는 {cost}개 차감됩니다.</p>
         </div>
       </div>
+      <p className="question-status-note">질문 등록 후 근처 사용자에게 물어보는 중 상태로 표시됩니다.</p>
       <div className="example-chips" aria-label="예시 질문">
         {["지금 주차 가능해요?", "줄 얼마나 길어요?", "사람 너무 많나요?", "사진 한 장 가능할까요?", "대기 얼마나 걸려요?"].map((example) => (
           <button key={example} onClick={() => onChange({ ...draft, content: example })} type="button">
@@ -1463,39 +1527,25 @@ function PolicyConsentModal({
       <section className="policy-modal" role="dialog" aria-modal="true" aria-label="서비스 약관 동의">
         <p className="eyebrow">처음 한 번만 확인</p>
         <h2>{actionLabel[action]} 전에 동의가 필요합니다</h2>
-        <div className="policy-check-list">
-          <label>
-            <input type="checkbox" checked readOnly />
-            이용약관 동의
-          </label>
-          <label>
-            <input type="checkbox" checked readOnly />
-            개인정보 처리방침 동의
-          </label>
-          <label>
-            <input type="checkbox" checked readOnly />
-            위치기반서비스 이용약관 동의
-          </label>
-          <label>
-            <input type="checkbox" checked readOnly />
-            사진 업로드 정책 동의
-          </label>
-        </div>
-        <p>
-          얼굴, 차량번호, 서류, 진료정보가 보이는 사진은 올릴 수 없고, 정확한 위치는 현장 인증에만 사용됩니다.
+        <p className="policy-summary">
+          #실시간은 위치와 사진을 현장 인증에만 사용합니다. 정확한 위치는 공개하지 않고, 사진의 위치정보는 제거합니다.
         </p>
-        <div className="policy-link-row">
-          <a href="/terms">이용약관</a>
-          <a href="/privacy">개인정보 처리방침</a>
-          <a href="/location-terms">위치기반서비스 이용약관</a>
-          <a href="/photo-policy">사진 업로드 정책</a>
-        </div>
+        <details className="policy-detail-links">
+          <summary>자세히 보기</summary>
+          <p>얼굴, 차량번호, 서류, 진료정보가 보이는 사진은 올릴 수 없습니다.</p>
+          <div className="policy-link-row">
+            <a href="/terms">이용약관</a>
+            <a href="/privacy">개인정보 처리방침</a>
+            <a href="/location-terms">위치기반서비스 이용약관</a>
+            <a href="/photo-policy">사진 업로드 정책</a>
+          </div>
+        </details>
         <div className="policy-modal-actions">
           <button onClick={onClose} type="button">
             닫기
           </button>
           <button onClick={onAccept} type="button">
-            동의하고 계속
+            전체 동의하고 계속
           </button>
         </div>
       </section>
@@ -1615,11 +1665,16 @@ function getPopularPlaces(
         pendingQuestionCount,
         photoReportCount,
         navigationIntentCount,
+        summary: popularSummary(place, photoReportCount),
         reason: popularReason(placeReports.length, pendingQuestionCount, photoReportCount, navigationIntentCount),
       };
     })
     .filter((item) => item.score > 0)
     .sort((left, right) => right.score - left.score || left.place.name.localeCompare(right.place.name, "ko"));
+}
+
+function popularSummary(place: Place, photoReportCount: number) {
+  return `사람 ${place.status} · 주차 ${place.parking} · 사진 제보 ${photoReportCount}건`;
 }
 
 function popularReason(
@@ -1665,6 +1720,27 @@ function navigationUrlForPlace(provider: NavigationProvider, place: Place) {
   }
 
   return `https://www.tmap.co.kr/search?query=${encodedName}`;
+}
+
+function shareCardLines(place: Place, reports: PublicReport[]): [string, string, string, string, string, string] {
+  const latestVerifiedReport = reports.find((report) => report.locationVerified);
+  const latestReport = latestVerifiedReport ?? reports[0];
+  const freshness = latestReport
+    ? `${minutesAgo(latestReport.createdAt)} · ${verificationLabel(latestReport)}`
+    : "최근 현장 제보 대기 중";
+
+  return [
+    "#실시간 현장 제보",
+    place.name,
+    place.goSignal,
+    `주차 ${place.parking} · 사람 ${place.status}`,
+    freshness,
+    "출발 전 확인하기",
+  ];
+}
+
+function shareTextForPlace(place: Place, reports: PublicReport[]) {
+  return shareCardLines(place, reports).join("\n");
 }
 
 function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: PublicQuestion[]): Place[] {
@@ -1741,6 +1817,18 @@ function minutesAgo(createdAt: string) {
   return `${diffMinutes}분 전`;
 }
 
+function reportMetaLine(report: Pick<PublicReport, "createdAt" | "photoUrl" | "verifiedRadiusM">) {
+  return `${minutesAgo(report.createdAt)} · ${verificationLabel(report)} · ${report.photoUrl ? "사진 있음" : "사진 없음"}`;
+}
+
+function trustBadgeClass(report: Pick<PublicReport, "verifiedRadiusM">) {
+  return `trust-badge trust-badge--${verificationToneClass(report)}`;
+}
+
+function verificationToneClass(report: Pick<PublicReport, "verifiedRadiusM">) {
+  return report.verifiedRadiusM ? "verified" : "unverified";
+}
+
 function signalClass(signal: Place["goSignal"]) {
   if (signal === "제보 기준 괜찮음") {
     return "good";
@@ -1754,5 +1842,5 @@ function signalClass(signal: Place["goSignal"]) {
 }
 
 function verificationLabel(report: Pick<PublicReport, "verifiedRadiusM">) {
-  return report.verifiedRadiusM ? "현장 인증" : "현장 인증 없음";
+  return report.verifiedRadiusM ? "현장 인증" : "인증 없음";
 }
