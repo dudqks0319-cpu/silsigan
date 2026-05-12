@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "#실시간 - 현장 상황 지도",
   description: "출발 전 10초, 지금 거기 상황을 사진과 위치 인증으로 확인하세요.",
   applicationName: "#실시간",

@@ -152,6 +152,8 @@ export default function SilsiganPrototype() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasPolicyConsent, setHasPolicyConsent] = useState(() => initialPolicyConsentAccepted());
   const [pendingConsentAction, setPendingConsentAction] = useState<ConsentAction | null>(null);
+  const [sharedPlaceId, setSharedPlaceId] = useState<string | null>(null);
+  const [manualShareText, setManualShareText] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedPlace = useMemo(
@@ -179,9 +181,23 @@ export default function SilsiganPrototype() {
       ]);
 
       const mappedPlaces = mapPlaces(placesResponse, reportsResponse, questionsResponse);
+      const deepLinkedPlaceId = sharedPlaceIdFromUrl();
+      const deepLinkedPlace = deepLinkedPlaceId
+        ? mappedPlaces.find((place) => place.id === deepLinkedPlaceId)
+        : null;
+
       setPlaces(mappedPlaces);
       setReports(reportsResponse);
       setQuestions(questionsResponse);
+
+      if (deepLinkedPlace) {
+        setSelectedPlaceId(deepLinkedPlace.id);
+        setSharedPlaceId(deepLinkedPlace.id);
+        setActiveTab("place");
+        setToast("친구가 공유한 현장을 열었습니다. 출발 전 상태를 바로 확인해 보세요.");
+        return;
+      }
+
       setSelectedPlaceId((current) => mappedPlaces.find((place) => place.id === current)?.id ?? mappedPlaces[0]?.id ?? "");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "데이터를 불러오지 못했습니다.");
@@ -199,6 +215,7 @@ export default function SilsiganPrototype() {
   }, [loadData]);
 
   const selectPlace = (place: Place, nextTab: TabId = "place") => {
+    setSharedPlaceId(null);
     setSelectedPlaceId(place.id);
     setActiveTab(nextTab);
   };
@@ -459,7 +476,12 @@ export default function SilsiganPrototype() {
 
   const sharePlaceSnapshot = async (place: Place, placeReports: PublicReport[]) => {
     const text = shareTextForPlace(place, placeReports);
-    const url = `${window.location.origin}/?place=${encodeURIComponent(place.id)}`;
+    const url = `${window.location.origin}/share/${encodeURIComponent(place.id)}`;
+    const sharePayload = `${text}\n${url}`;
+    const showManualShareFallback = () => {
+      setManualShareText(sharePayload);
+      setToast("공유 문구를 직접 복사해 카카오톡에 붙여 넣어 주세요.");
+    };
 
     try {
       if (navigator.share) {
@@ -472,15 +494,20 @@ export default function SilsiganPrototype() {
         return;
       }
 
-      await navigator.clipboard.writeText(`${text}\n${url}`);
-      setToast("카카오톡에 붙여 넣을 공유 카드 문구를 복사했습니다.");
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(sharePayload);
+        setToast("카카오톡에 붙여 넣을 공유 카드 문구를 복사했습니다.");
+        return;
+      }
+
+      showManualShareFallback();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setToast("공유를 취소했습니다.");
         return;
       }
 
-      setToast("공유를 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      showManualShareFallback();
     }
   };
 
@@ -534,6 +561,7 @@ export default function SilsiganPrototype() {
                   onGoReport={() => setActiveTab("report")}
                   onNavigateIntent={openNavigationIntent}
                   onSharePlace={sharePlaceSnapshot}
+                  isSharedLanding={sharedPlaceId === selectedPlace.id}
                   place={selectedPlace}
                   questions={selectedQuestions}
                   reports={selectedReports}
@@ -581,6 +609,7 @@ export default function SilsiganPrototype() {
             onClose={() => setPendingConsentAction(null)}
           />
         )}
+        {manualShareText && <ManualShareSheet onClose={() => setManualShareText(null)} text={manualShareText} />}
         <BottomNav activeTab={activeTab} onChange={setActiveTab} />
       </section>
     </main>
@@ -971,6 +1000,7 @@ function PlaceScreen({
   onGoReport,
   onNavigateIntent,
   onSharePlace,
+  isSharedLanding,
   place,
   questions,
   reports,
@@ -982,6 +1012,7 @@ function PlaceScreen({
   onGoReport: () => void;
   onNavigateIntent: (provider: NavigationProvider, place: Place) => void;
   onSharePlace: (place: Place, reports: PublicReport[]) => void;
+  isSharedLanding: boolean;
   place: Place;
   questions: PublicQuestion[];
   reports: PublicReport[];
@@ -994,6 +1025,14 @@ function PlaceScreen({
 
   return (
     <div className="screen-stack">
+      {isSharedLanding && (
+        <SharedLandingCard
+          lastVerifiedReport={lastVerifiedReport}
+          onGoQuestion={onGoQuestion}
+          onGoReport={onGoReport}
+          place={place}
+        />
+      )}
       <section className="detail-hero">
         <div className={`go-signal go-signal--${signalClass(place.goSignal)}`}>{place.goSignal}</div>
         <StatusPill level={place.crowdLevel} label={place.status} />
@@ -1116,6 +1155,37 @@ function PlaceScreen({
         {flagged ? "신고 접수됨" : "문제 있는 제보 신고"}
       </ActionButton>
     </div>
+  );
+}
+
+function SharedLandingCard({
+  lastVerifiedReport,
+  onGoQuestion,
+  onGoReport,
+  place,
+}: {
+  lastVerifiedReport: PublicReport | undefined;
+  onGoQuestion: () => void;
+  onGoReport: () => void;
+  place: Place;
+}) {
+  return (
+    <section className="shared-landing-card" aria-label="공유된 현장">
+      <p className="eyebrow">친구가 공유한 현장</p>
+      <strong>
+        {place.name} · {lastVerifiedReport ? minutesAgo(lastVerifiedReport.createdAt) : place.updatedAt}
+      </strong>
+      <span>{place.goSignal}</span>
+      <p>{lastVerifiedReport ? reportMetaLine(lastVerifiedReport) : "최근 현장 인증을 기다리고 있습니다."}</p>
+      <div className="shared-landing-actions">
+        <button onClick={onGoReport} type="button">
+          출발 전 확인하기
+        </button>
+        <button onClick={onGoQuestion} type="button">
+          여기 지금 어때요?
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -1553,6 +1623,24 @@ function PolicyConsentModal({
   );
 }
 
+function ManualShareSheet({ onClose, text }: { onClose: () => void; text: string }) {
+  return (
+    <div className="policy-modal-backdrop" role="presentation">
+      <section className="policy-modal manual-share-sheet" role="dialog" aria-modal="true" aria-label="공유 문구 직접 복사">
+        <p className="eyebrow">공유 문구</p>
+        <h2>카카오톡에 붙여 넣어 주세요</h2>
+        <p>이 브라우저에서는 자동 복사를 사용할 수 없어 공유 문구를 직접 보여드립니다.</p>
+        <textarea readOnly value={text} />
+        <div className="policy-modal-actions">
+          <button onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function BottomNav({ activeTab, onChange }: { activeTab: TabId; onChange: (tab: TabId) => void }) {
   return (
     <nav className="bottom-nav" aria-label="주요 화면">
@@ -1725,9 +1813,7 @@ function navigationUrlForPlace(provider: NavigationProvider, place: Place) {
 function shareCardLines(place: Place, reports: PublicReport[]): [string, string, string, string, string, string] {
   const latestVerifiedReport = reports.find((report) => report.locationVerified);
   const latestReport = latestVerifiedReport ?? reports[0];
-  const freshness = latestReport
-    ? `${minutesAgo(latestReport.createdAt)} · ${verificationLabel(latestReport)}`
-    : "최근 현장 제보 대기 중";
+  const freshness = latestReport ? reportMetaLine(latestReport) : "최근 현장 제보 대기 중";
 
   return [
     "#실시간 현장 제보",
@@ -1741,6 +1827,14 @@ function shareCardLines(place: Place, reports: PublicReport[]): [string, string,
 
 function shareTextForPlace(place: Place, reports: PublicReport[]) {
   return shareCardLines(place, reports).join("\n");
+}
+
+function sharedPlaceIdFromUrl() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return new URLSearchParams(window.location.search).get("place");
 }
 
 function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: PublicQuestion[]): Place[] {

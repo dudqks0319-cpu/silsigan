@@ -72,6 +72,7 @@ test("place detail exposes navigation intent and answer completion feedback", as
     "카카오톡 공유 카드",
     "#실시간 현장 제보",
     "출발 전 확인하기",
+    "친구가 공유한 현장",
     "질문자에게 전달됐습니다",
   ]) {
     assert.match(source, new RegExp(label));
@@ -81,6 +82,25 @@ test("place detail exposes navigation intent and answer completion feedback", as
   assert.match(source, /nav-cta-card/);
   assert.match(source, /sharePlaceSnapshot/);
   assert.match(source, /shareTextForPlace/);
+  assert.match(source, /sharedPlaceIdFromUrl/);
+  assert.match(source, /setActiveTab\("place"\)/);
+  assert.match(source, /navigator\.clipboard\?\.writeText/);
+  assert.match(source, /ManualShareSheet/);
+  assert.match(source, /\/share\/\$\{encodeURIComponent\(place\.id\)\}/);
+});
+
+test("share route provides OG metadata and redirects users into the app place detail", async () => {
+  const page = await readFile(new URL("../src/app/share/[placeId]/page.tsx", import.meta.url), "utf8");
+  const image = await readFile(new URL("../src/app/share/[placeId]/opengraph-image.tsx", import.meta.url), "utf8");
+  const previews = await readFile(new URL("../src/lib/share-preview.ts", import.meta.url), "utf8");
+
+  assert.match(page, /generateMetadata/);
+  assert.match(page, /openGraph/);
+  assert.match(page, /\/\?place=\$\{encodeURIComponent\(preview\.placeId\)\}&from=share/);
+  assert.match(page, /ShareOpenApp/);
+  assert.match(image, /ImageResponse/);
+  assert.match(previews, /busan-gwangalli/);
+  assert.match(previews, /8분 전 · 현장 인증 · 사진 있음/);
 });
 
 test("first-use consent modal covers terms, privacy, location, and photo policy", async () => {

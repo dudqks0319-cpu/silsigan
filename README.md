@@ -23,13 +23,20 @@
 ## 현재 구현 상태
 
 - 프론트는 `/api/places`, `/api/reports`, `/api/questions`를 호출한다.
-- API는 아직 Supabase가 아니라 서버 목업 저장소를 사용한다.
-- 질문/물어보기권 차감은 클라이언트 잔액을 신뢰하지 않고 서버 목업 원장으로 판단한다.
-- 제보/질문/신고 API에는 기본 rate limit이 들어 있다.
+- 로컬 개발에서는 mock-store를 사용할 수 있고, Vercel Preview/Production에서는 Supabase 설정이 없으면 시작하지 않는다.
+- Supabase Auth 익명 세션으로 API를 호출하고, 서버에서는 service role을 사용해 프로필과 원장을 처리한다.
+- 질문 생성/물어보기권 차감과 제보 생성/보상 지급은 Supabase RPC 트랜잭션으로 처리한다.
+- 신규 사용자는 signup bonus RPC로 물어보기권을 1회 지급한다.
+- 제보/질문/신고/사진 업로드 API에는 기본 rate limit이 들어 있다.
 - 위치 권한 실패 시 데모 위치로 현장 인증하지 않고, 인증 없는 제보로 낮은 신뢰도 표시한다.
-- 사진 업로드는 파일 input과 서버 검증 seam까지 구현되어 있으며 실제 Storage 저장/이미지 재인코딩은 다음 단계다.
-- 관리자 신고 큐 초안은 `/admin/moderation`에 있으며 `ADMIN_MODERATION_TOKEN` 없이는 큐를 공개하지 않는다.
+- 사진 업로드는 `sharp`로 JPEG 재인코딩하고 원본 파일명/EXIF/GPS 저장을 피한 뒤 Supabase Storage에 UUID 경로로 저장한다.
+- 24시간 이상 제보에 연결되지 않은 사진 업로드를 정리하는 관리자 API가 있다.
+- 관리자 신고 큐는 `/admin/moderation`에 있으며 `ADMIN_MODERATION_TOKEN` 없이는 큐와 cleanup API를 공개하지 않는다.
+- 신고 숨김 처리 시 Storage 사진 삭제와 처리 로그 저장 흐름을 제공한다.
 - 지도는 네이버 지도 JavaScript API v3를 사용하며 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID`에 `ncpKeyId` 값을 넣으면 활성화된다.
+- 홈은 검색, 방금 올라온 현장, 사진 없는 상태 제보, 지금 많이 확인하는 곳, 답변 가능한 질문 중심의 한국 웹 베타 UX로 구성되어 있다.
+- 공유는 Web Share API를 우선 사용하고, 미지원 브라우저는 클립보드 복사 또는 수동 복사 모달로 fallback한다.
+- 공유 URL은 `/share/[placeId]`에서 카카오톡/OG 메타를 제공한 뒤 `/?place=...&from=share`로 앱 장소 상세 진입을 유도한다.
 
 ## 개발 명령
 
