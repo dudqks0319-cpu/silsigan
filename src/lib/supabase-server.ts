@@ -89,9 +89,9 @@ export async function getRequiredUserId(request: Request) {
 
 export async function ensureProfile(userId: string) {
   const supabase = createSupabaseServiceClient();
-  const { error } = await supabase
-    .from("profiles")
-    .upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });
+  const { error } = await supabase.rpc("ensure_profile_with_signup_bonus", {
+    p_user_id: userId,
+  });
 
   if (error) {
     throwSupabaseError(error, "PROFILE_UPSERT_FAILED", "프로필 생성에 실패했습니다.");

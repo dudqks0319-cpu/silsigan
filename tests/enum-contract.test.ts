@@ -89,6 +89,32 @@ test("operational hardening migration supports stale photo cleanup and question 
   assert.match(sql, /grant execute on function public\.list_stale_report_photo_uploads/i);
 });
 
+test("security release gate removes raw public table reads and grants signup credits once", async () => {
+  const sql = await readFile(
+    new URL("../supabase/migrations/20260512120000_beta_security_release_gate.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(sql, /drop policy if exists "visible reports are publicly readable" on public\.reports/i);
+  assert.match(sql, /drop policy if exists "place questions are publicly readable" on public\.questions/i);
+  assert.match(sql, /drop view if exists public\.active_reports/i);
+  assert.match(sql, /create view public\.active_reports/i);
+  assert.match(sql, /create view public\.public_active_reports/i);
+  assert.match(sql, /create view public\.public_place_questions/i);
+  assert.match(sql, /\(photo_path is not null\) as has_photo/i);
+  assert.doesNotMatch(extractView(sql, "active_reports"), /\buser_id\b/i);
+  assert.doesNotMatch(extractView(sql, "active_reports"), /\bphoto_path,\b/i);
+  assert.doesNotMatch(extractView(sql, "public_active_reports"), /\buser_id\b/i);
+  assert.doesNotMatch(extractView(sql, "public_active_reports"), /\bphoto_path,\b/i);
+  assert.doesNotMatch(extractView(sql, "public_place_questions"), /\buser_id\b/i);
+  assert.match(sql, /credit_events_signup_once_idx/i);
+  assert.match(sql, /create or replace function public\.ensure_profile_with_signup_bonus/i);
+  assert.match(sql, /values \(p_user_id, 'signup_bonus', 3\)/i);
+  assert.match(sql, /perform public\.ensure_profile_with_signup_bonus\(v_user_id\)/i);
+  assert.match(sql, /revoke execute on function public\.ensure_profile_with_signup_bonus/i);
+  assert.match(sql, /grant execute on function public\.ensure_profile_with_signup_bonus\(uuid\) to service_role/i);
+});
+
 function parseSqlEnum(sql: string, enumName: string) {
   const match = new RegExp(`create type public\\.${enumName} as enum \\(([^;]+)\\);`).exec(sql);
   assert.ok(match, `Missing enum ${enumName}`);
@@ -96,4 +122,11 @@ function parseSqlEnum(sql: string, enumName: string) {
   return match[1]
     .split(",")
     .map((value) => value.trim().replaceAll("'", ""));
+}
+
+function extractView(sql: string, viewName: string) {
+  const match = new RegExp(`create view public\\.${viewName} as([\\s\\S]+?);`, "i").exec(sql);
+  assert.ok(match, `Missing view ${viewName}`);
+
+  return match[1];
 }

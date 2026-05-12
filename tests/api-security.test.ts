@@ -17,6 +17,9 @@ const { assertAdminTokenHeader, isAdminCookieAuthorized } = await import(
 const { GET: getModerationFlags } = await import(
   new URL("../src/app/api/moderation-flags/route.ts", import.meta.url).href
 );
+const { GET: cleanupReportPhotos } = await import(
+  new URL("../src/app/api/admin/cleanup-report-photos/route.ts", import.meta.url).href
+);
 
 test("public reports expose coarse radius but not exact client coordinates", () => {
   const latitude = 35.5486;
@@ -193,6 +196,47 @@ test("moderation queue route returns 401 without admin token", async () => {
       process.env.ADMIN_MODERATION_TOKEN = previousToken;
     }
   }
+});
+
+test("cleanup report photos route is protected by the admin token before store access", async () => {
+  const previousToken = process.env.ADMIN_MODERATION_TOKEN;
+  process.env.ADMIN_MODERATION_TOKEN = "cleanup-secret";
+
+  try {
+    const response = await cleanupReportPhotos(new Request("http://localhost/api/admin/cleanup-report-photos"));
+    const payload = await response.json() as { error?: { code?: string } };
+
+    assert.equal(response.status, 401);
+    assert.equal(payload.error?.code, "ADMIN_AUTH_REQUIRED");
+  } finally {
+    restoreEnv("ADMIN_MODERATION_TOKEN", previousToken);
+  }
+});
+
+test("cleanup report photos route validates optional before date", async () => {
+  const previousToken = process.env.ADMIN_MODERATION_TOKEN;
+  process.env.ADMIN_MODERATION_TOKEN = "cleanup-secret";
+
+  try {
+    const response = await cleanupReportPhotos(
+      new Request("http://localhost/api/admin/cleanup-report-photos?before=not-a-date", {
+        headers: { authorization: "Bearer cleanup-secret" },
+      }),
+    );
+    const payload = await response.json() as { error?: { code?: string } };
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.error?.code, "INVALID_CLEANUP_BEFORE");
+  } finally {
+    restoreEnv("ADMIN_MODERATION_TOKEN", previousToken);
+  }
+});
+
+test("server profile helper uses the signup bonus RPC", async () => {
+  const source = await readFile(new URL("../src/lib/supabase-server.ts", import.meta.url), "utf8");
+
+  assert.match(source, /ensure_profile_with_signup_bonus/);
+  assert.match(source, /p_user_id: userId/);
 });
 
 test("photo validation rejects unsupported and mismatched uploads", () => {
