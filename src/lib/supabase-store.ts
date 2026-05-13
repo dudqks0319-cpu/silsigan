@@ -16,11 +16,20 @@ import { validateStoredPhotoPath } from "./photo-validation.ts";
 import {
   createSupabaseServiceClient,
   ensureProfile,
+  getOptionalUserId,
   getReportPhotoBucket,
   getRequiredUserId,
   throwSupabaseError,
 } from "./supabase-server.ts";
-import type { CreateQuestionInput, CreateReportInput, FlagReportInput, ModerationActionInput } from "./validators.ts";
+import type {
+  AccountDeletionRequestInput,
+  BlockReportAuthorInput,
+  CreateQuestionInput,
+  CreateReportInput,
+  FlagReportInput,
+  ModerationActionInput,
+  UnblockUserInput,
+} from "./validators.ts";
 
 type PlaceRow = {
   id: string;
@@ -34,6 +43,7 @@ type PlaceRow = {
 
 type ReportRow = {
   id: string;
+  user_id: string;
   place_id: string;
   category: ReportCategory;
   crowd_level: string;
@@ -55,6 +65,7 @@ type ReportRow = {
 
 type QuestionRow = {
   id: string;
+  user_id: string;
   place_id: string;
   question_type: QuestionType;
   body: string;
@@ -66,6 +77,17 @@ type QuestionRow = {
 type StalePhotoUploadRow = {
   bucket_name: string;
   photo_path: string;
+};
+
+type AccountDeletionRequestRow = {
+  id: string;
+  requested_at: string;
+  status: "pending" | "processing" | "completed" | "rejected";
+};
+
+type UserBlockRow = {
+  blocked_id: string;
+  created_at: string;
 };
 
 type RpcReportPayload = {
@@ -126,13 +148,17 @@ export async function listPlaces() {
   }));
 }
 
-export async function listPublicReports(filters: { placeId?: string; includeExpired?: boolean } = {}) {
+export async function listPublicReports(
+  filters: { placeId?: string; includeExpired?: boolean } = {},
+  options: { request?: Request } = {},
+) {
   const supabase = createSupabaseServiceClient();
   let query = supabase
     .from("reports")
     .select(
       [
         "id",
+        "user_id",
         "place_id",
         "category",
         "crowd_level",
@@ -166,7 +192,10 @@ export async function listPublicReports(filters: { placeId?: string; includeExpi
     throwSupabaseError(error, "REPORTS_FETCH_FAILED", "제보 목록을 불러오지 못했습니다.");
   }
 
-  return Promise.all(((data ?? []) as unknown as ReportRow[]).map(mapReportRowForPublic));
+  const blockedUserIds = await getBlockedUserIdsForRequest(options.request);
+  const visibleReports = ((data ?? []) as unknown as ReportRow[]).filter((report) => !blockedUserIds.has(report.user_id));
+
+  return Promise.all(visibleReports.map(mapReportRowForPublic));
 }
 
 export async function createReport(input: CreateReportInput, options: { request: Request }) {
@@ -237,11 +266,11 @@ export async function createReport(input: CreateReportInput, options: { request:
   };
 }
 
-export async function listPublicQuestions(placeId?: string) {
+export async function listPublicQuestions(placeId?: string, options: { request?: Request } = {}) {
   const supabase = createSupabaseServiceClient();
   let query = supabase
     .from("questions")
-    .select("id, place_id, question_type, body, credit_cost, answered_report_id, created_at")
+    .select("id, user_id, place_id, question_type, body, credit_cost, answered_report_id, created_at")
     .order("created_at", { ascending: false });
 
   if (placeId) {
@@ -254,15 +283,18 @@ export async function listPublicQuestions(placeId?: string) {
     throwSupabaseError(error, "QUESTIONS_FETCH_FAILED", "물어보기 목록을 불러오지 못했습니다.");
   }
 
-  return ((data ?? []) as QuestionRow[]).map((question) => ({
-    id: question.id,
-    placeId: question.place_id,
-    questionType: question.question_type,
-    body: question.body,
-    creditCost: question.credit_cost,
-    answeredReportId: question.answered_report_id,
-    createdAt: question.created_at,
-  }));
+  const blockedUserIds = await getBlockedUserIdsForRequest(options.request);
+  return ((data ?? []) as QuestionRow[])
+    .filter((question) => !blockedUserIds.has(question.user_id))
+    .map((question) => ({
+      id: question.id,
+      placeId: question.place_id,
+      questionType: question.question_type,
+      body: question.body,
+      creditCost: question.credit_cost,
+      answeredReportId: question.answered_report_id,
+      createdAt: question.created_at,
+    }));
 }
 
 export async function createQuestion(input: CreateQuestionInput, options: { request: Request }) {
@@ -339,6 +371,96 @@ export async function flagReport(input: FlagReportInput, options: { request: Req
     hidden: Boolean(report.hidden_at || shouldHide),
     flagCount: flagReasons.length,
     hideRule: "privacy/sensitive 1건, 허위 2건, 전체 신고 3건 이상이면 자동 숨김 처리",
+  };
+}
+
+export async function listUserBlocks(options: { request: Request }) {
+  const userId = await getRequiredUserId(options.request);
+  await ensureProfile(userId);
+
+  const { data, error } = await createSupabaseServiceClient()
+    .from("user_blocks")
+    .select("blocked_id, created_at")
+    .eq("blocker_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throwSupabaseError(error, "USER_BLOCKS_FETCH_FAILED", "차단 목록을 불러오지 못했습니다.");
+  }
+
+  return ((data ?? []) as UserBlockRow[]).map((block) => ({
+    blockedUserId: block.blocked_id,
+    label: blockedUserLabel(block.blocked_id),
+    createdAt: block.created_at,
+  }));
+}
+
+export async function blockReportAuthor(input: BlockReportAuthorInput, options: { request: Request }) {
+  const userId = await getRequiredUserId(options.request);
+  await ensureProfile(userId);
+
+  const supabase = createSupabaseServiceClient();
+  const { data: report, error: reportError } = await supabase
+    .from("reports")
+    .select("id, user_id")
+    .eq("id", input.reportId)
+    .maybeSingle();
+
+  if (reportError) {
+    throwSupabaseError(reportError, "REPORT_LOOKUP_FAILED", "제보를 확인하지 못했습니다.");
+  }
+
+  if (!report) {
+    throw new ApiError(404, "REPORT_NOT_FOUND", "제보를 찾을 수 없습니다.");
+  }
+
+  const blockedUserId = String(report.user_id);
+  if (blockedUserId === userId) {
+    throw new ApiError(400, "SELF_BLOCK_NOT_ALLOWED", "내 제보 작성자는 차단할 수 없습니다.");
+  }
+
+  const { data, error } = await supabase
+    .from("user_blocks")
+    .upsert(
+      {
+        blocker_id: userId,
+        blocked_id: blockedUserId,
+      },
+      { onConflict: "blocker_id,blocked_id" },
+    )
+    .select("blocked_id, created_at")
+    .single();
+
+  if (error) {
+    throwSupabaseError(error, "USER_BLOCK_CREATE_FAILED", "사용자 차단에 실패했습니다.");
+  }
+
+  const block = data as UserBlockRow;
+
+  return {
+    blockedUserId: block.blocked_id,
+    label: blockedUserLabel(block.blocked_id),
+    createdAt: block.created_at,
+  };
+}
+
+export async function unblockUser(input: UnblockUserInput, options: { request: Request }) {
+  const userId = await getRequiredUserId(options.request);
+  await ensureProfile(userId);
+
+  const { error } = await createSupabaseServiceClient()
+    .from("user_blocks")
+    .delete()
+    .eq("blocker_id", userId)
+    .eq("blocked_id", input.blockedUserId);
+
+  if (error) {
+    throwSupabaseError(error, "USER_BLOCK_DELETE_FAILED", "사용자 차단 해제에 실패했습니다.");
+  }
+
+  return {
+    blockedUserId: input.blockedUserId,
+    unblocked: true,
   };
 }
 
@@ -462,6 +584,54 @@ export async function cleanupUnusedReportPhotos(before = new Date(Date.now() - 2
   return { deleted: staleUploads.length };
 }
 
+export async function requestAccountDeletion(input: AccountDeletionRequestInput, options: { request: Request }) {
+  const userId = await getRequiredUserId(options.request);
+  await ensureProfile(userId);
+
+  const supabase = createSupabaseServiceClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("account_deletion_requests")
+    .select("id, requested_at, status")
+    .eq("user_id", userId)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (existingError) {
+    throwSupabaseError(existingError, "ACCOUNT_DELETION_FETCH_FAILED", "계정 삭제 요청을 확인하지 못했습니다.");
+  }
+
+  if (existing) {
+    const request = existing as AccountDeletionRequestRow;
+
+    return {
+      id: request.id,
+      requestedAt: request.requested_at,
+      status: request.status,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("account_deletion_requests")
+    .insert({
+      user_id: userId,
+      reason: input.reason ?? null,
+    })
+    .select("id, requested_at, status")
+    .single();
+
+  if (error) {
+    throwSupabaseError(error, "ACCOUNT_DELETION_REQUEST_FAILED", "계정 삭제 요청을 저장하지 못했습니다.");
+  }
+
+  const request = data as AccountDeletionRequestRow;
+
+  return {
+    id: request.id,
+    requestedAt: request.requested_at,
+    status: request.status,
+  };
+}
+
 async function findPlace(placeId: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
@@ -547,6 +717,32 @@ async function signedPhotoUrl(photoPath: string | null) {
   }
 
   return data.signedUrl;
+}
+
+async function getBlockedUserIdsForRequest(request?: Request) {
+  if (!request) {
+    return new Set<string>();
+  }
+
+  const userId = await getOptionalUserId(request);
+  if (!userId) {
+    return new Set<string>();
+  }
+
+  const { data, error } = await createSupabaseServiceClient()
+    .from("user_blocks")
+    .select("blocked_id")
+    .eq("blocker_id", userId);
+
+  if (error) {
+    throwSupabaseError(error, "USER_BLOCKS_FETCH_FAILED", "차단 목록을 확인하지 못했습니다.");
+  }
+
+  return new Set(((data ?? []) as Pick<UserBlockRow, "blocked_id">[]).map((block) => block.blocked_id));
+}
+
+function blockedUserLabel(blockedUserId: string) {
+  return `익명 사용자 ${blockedUserId.slice(0, 8)}`;
 }
 
 async function hideReportWithOptionalPhotoDelete(reportId: string, update: Record<string, unknown>) {

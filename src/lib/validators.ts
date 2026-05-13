@@ -55,6 +55,18 @@ export const flagReportSchema = z.object({
 
 export type FlagReportInput = z.infer<typeof flagReportSchema>;
 
+export const blockReportAuthorSchema = z.object({
+  reportId: z.string().min(1).max(80),
+});
+
+export type BlockReportAuthorInput = z.infer<typeof blockReportAuthorSchema>;
+
+export const unblockUserSchema = z.object({
+  blockedUserId: z.string().min(1).max(80),
+});
+
+export type UnblockUserInput = z.infer<typeof unblockUserSchema>;
+
 export const moderationActionSchema = z.object({
   reportId: z.string().min(1).max(80),
   action: z.enum(["hide", "restore"]),
@@ -63,3 +75,9 @@ export const moderationActionSchema = z.object({
 });
 
 export type ModerationActionInput = z.infer<typeof moderationActionSchema>;
+
+export const accountDeletionRequestSchema = z.object({
+  reason: z.string().trim().max(200).optional(),
+});
+
+export type AccountDeletionRequestInput = z.infer<typeof accountDeletionRequestSchema>;

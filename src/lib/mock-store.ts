@@ -16,7 +16,14 @@ import {
 } from "./domain.ts";
 import { ApiError } from "./errors.ts";
 import { sanitizePhotoUpload } from "./photo-validation.ts";
-import type { CreateQuestionInput, CreateReportInput, FlagReportInput } from "./validators.ts";
+import type {
+  AccountDeletionRequestInput,
+  BlockReportAuthorInput,
+  CreateQuestionInput,
+  CreateReportInput,
+  FlagReportInput,
+  UnblockUserInput,
+} from "./validators.ts";
 
 export const mockPlaces: Place[] = [
   {
@@ -62,6 +69,7 @@ const demoNow = new Date();
 const reports: StoredReport[] = [
   {
     id: "report_seed_ulsan_1",
+    userId: "seed-reporter-ulsan",
     placeId: "ulsan-taehwagang",
     category: "tourism",
     crowdLevel: "normal",
@@ -79,6 +87,7 @@ const reports: StoredReport[] = [
   },
   {
     id: "report_seed_busan_1",
+    userId: "seed-reporter-busan",
     placeId: "busan-gwangalli",
     category: "tourism",
     crowdLevel: "packed",
@@ -96,6 +105,7 @@ const reports: StoredReport[] = [
   },
   {
     id: "report_seed_gyeongju_1",
+    userId: "seed-reporter-gyeongju",
     placeId: "gyeongju-hwangridan",
     category: "restaurant_cafe",
     crowdLevel: "busy",
@@ -113,6 +123,7 @@ const reports: StoredReport[] = [
   },
   {
     id: "report_seed_office_1",
+    userId: "seed-reporter-office",
     placeId: "ulsan-city-hall",
     category: "public_office",
     crowdLevel: "normal",
@@ -133,6 +144,7 @@ const reports: StoredReport[] = [
 const questions: StoredQuestion[] = [
   {
     id: "question_seed_1",
+    userId: "seed-question-ulsan",
     placeId: "ulsan-taehwagang",
     questionType: "parking",
     body: "지금 국가정원 공영주차장 들어갈 수 있나요?",
@@ -142,6 +154,7 @@ const questions: StoredQuestion[] = [
   },
   {
     id: "question_seed_2",
+    userId: "seed-question-busan",
     placeId: "busan-gwangalli",
     questionType: "photo_request",
     body: "무대 앞쪽 사진으로 볼 수 있을까요?",
@@ -153,6 +166,8 @@ const questions: StoredQuestion[] = [
 
 const flagsByReportId = new Map<string, FlagReason[]>();
 const creditEventsByActorId = new Map<string, CreditEvent[]>();
+const accountDeletionRequestsByActorId = new Map<string, { id: string; requestedAt: string; status: "pending" }>();
+const blockedUsersByActorId = new Map<string, Map<string, string>>();
 
 type CreateQuestionOptions = {
   actorId?: string;
@@ -171,10 +186,18 @@ export function listPlaces() {
   }));
 }
 
-export function listReports(filters: { placeId?: string; includeExpired?: boolean } = {}) {
+export function listReports(
+  filters: { placeId?: string; includeExpired?: boolean } = {},
+  options: { actorId?: string } = {},
+) {
   const now = new Date();
+  const blockedUsers = getBlockedUsers(options.actorId);
 
   return reports.filter((report) => {
+    if (blockedUsers.has(report.userId)) {
+      return false;
+    }
+
     if (filters.placeId && report.placeId !== filters.placeId) {
       return false;
     }
@@ -191,8 +214,11 @@ export function listReports(filters: { placeId?: string; includeExpired?: boolea
   });
 }
 
-export function listPublicReports(filters: { placeId?: string; includeExpired?: boolean } = {}) {
-  return listReports(filters).map(maskReportForPublic);
+export function listPublicReports(
+  filters: { placeId?: string; includeExpired?: boolean } = {},
+  options: { actorId?: string } = {},
+) {
+  return listReports(filters, options).map(maskReportForPublic);
 }
 
 export function createReport(input: CreateReportInput, options: { actorId?: string } = {}) {
@@ -227,6 +253,7 @@ export function createReport(input: CreateReportInput, options: { actorId?: stri
   const now = new Date();
   const report: StoredReport = {
     id: `report_${crypto.randomUUID()}`,
+    userId: options.actorId ?? "demo-user",
     placeId: input.placeId,
     category: input.category,
     crowdLevel: input.crowdLevel,
@@ -270,12 +297,20 @@ export function createReport(input: CreateReportInput, options: { actorId?: stri
   };
 }
 
-export function listQuestions(placeId?: string) {
-  return questions.filter((question) => !placeId || question.placeId === placeId);
+export function listQuestions(placeId?: string, options: { actorId?: string } = {}) {
+  const blockedUsers = getBlockedUsers(options.actorId);
+
+  return questions.filter((question) => {
+    if (blockedUsers.has(question.userId)) {
+      return false;
+    }
+
+    return !placeId || question.placeId === placeId;
+  });
 }
 
-export function listPublicQuestions(placeId?: string) {
-  return listQuestions(placeId).map(maskQuestionForPublic);
+export function listPublicQuestions(placeId?: string, options: { actorId?: string } = {}) {
+  return listQuestions(placeId, options).map(maskQuestionForPublic);
 }
 
 export function createQuestion(input: CreateQuestionInput, options: CreateQuestionOptions = {}) {
@@ -302,6 +337,7 @@ export function createQuestion(input: CreateQuestionInput, options: CreateQuesti
 
   const question: StoredQuestion = {
     id: `question_${crypto.randomUUID()}`,
+    userId: actorId,
     placeId: input.placeId,
     questionType: input.questionType,
     body: input.body,
@@ -343,6 +379,48 @@ export function flagReport(input: FlagReportInput) {
   };
 }
 
+export function listUserBlocks(options: { actorId?: string } = {}) {
+  return Array.from(getBlockedUsers(options.actorId).entries()).map(([blockedUserId, createdAt]) => ({
+    blockedUserId,
+    label: blockedUserLabel(blockedUserId),
+    createdAt,
+  }));
+}
+
+export function blockReportAuthor(input: BlockReportAuthorInput, options: { actorId?: string } = {}) {
+  const actorId = options.actorId ?? "demo-user";
+  const report = reports.find((candidate) => candidate.id === input.reportId);
+
+  if (!report) {
+    throw new ApiError(404, "REPORT_NOT_FOUND", "제보를 찾을 수 없습니다.");
+  }
+
+  if (report.userId === actorId) {
+    throw new ApiError(400, "SELF_BLOCK_NOT_ALLOWED", "내 제보 작성자는 차단할 수 없습니다.");
+  }
+
+  const blockedUsers = getBlockedUsers(actorId);
+  const createdAt = blockedUsers.get(report.userId) ?? new Date().toISOString();
+  blockedUsers.set(report.userId, createdAt);
+
+  return {
+    blockedUserId: report.userId,
+    label: blockedUserLabel(report.userId),
+    createdAt,
+  };
+}
+
+export function unblockUser(input: UnblockUserInput, options: { actorId?: string } = {}) {
+  const actorId = options.actorId ?? "demo-user";
+  const blockedUsers = getBlockedUsers(actorId);
+  blockedUsers.delete(input.blockedUserId);
+
+  return {
+    blockedUserId: input.blockedUserId,
+    unblocked: true,
+  };
+}
+
 export function getCreditBalance(actorId = "demo-user") {
   const events = creditEventsByActorId.get(actorId) ?? seedCredits();
   creditEventsByActorId.set(actorId, events);
@@ -358,6 +436,26 @@ export function getModerationQueue() {
       flagReasons: flagsByReportId.get(report.id) ?? [],
       status: report.hiddenAt ? "hidden" : "needs_review",
     }));
+}
+
+export function requestAccountDeletion(input: AccountDeletionRequestInput, options: { actorId?: string } = {}) {
+  const actorId = options.actorId ?? "demo-user";
+  const existing = accountDeletionRequestsByActorId.get(actorId);
+
+  if (existing) {
+    return existing;
+  }
+
+  const request = {
+    id: `account_deletion_${crypto.randomUUID()}`,
+    requestedAt: new Date().toISOString(),
+    status: "pending" as const,
+    reason: input.reason ?? null,
+  };
+
+  accountDeletionRequestsByActorId.set(actorId, request);
+
+  return request;
 }
 
 function addCredits(actorId: string, events: ReturnType<typeof creditEventsForReport>) {
@@ -384,6 +482,22 @@ function maskReportForPublic(report: StoredReport) {
     flagCount: report.flagCount,
     hiddenAt: report.hiddenAt,
   };
+}
+
+function getBlockedUsers(actorId = "demo-user") {
+  const current = blockedUsersByActorId.get(actorId);
+  if (current) {
+    return current;
+  }
+
+  const next = new Map<string, string>();
+  blockedUsersByActorId.set(actorId, next);
+
+  return next;
+}
+
+function blockedUserLabel(blockedUserId: string) {
+  return `익명 사용자 ${blockedUserId.slice(0, 8)}`;
 }
 
 function maskQuestionForPublic(question: StoredQuestion) {

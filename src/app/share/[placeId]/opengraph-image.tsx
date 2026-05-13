@@ -34,7 +34,7 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
           height: "100%",
           padding: 72,
           color: "#ffffff",
-          background: "linear-gradient(135deg, #073b42 0%, #087f8c 58%, #13a58f 100%)",
+          background: "linear-gradient(135deg, #0f172a 0%, #2563eb 58%, #38bdf8 100%)",
           fontFamily: "sans-serif",
         }}
       >
@@ -45,7 +45,7 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
             style={{
               alignSelf: "flex-start",
               padding: "16px 22px",
-              color: "#073b42",
+              color: "#1d4ed8",
               background: "#ffffff",
               borderRadius: 999,
               fontSize: 34,

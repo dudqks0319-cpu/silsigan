@@ -14,6 +14,7 @@ export type Place = {
   id: string;
   name: string;
   category: ReportCategory;
+  region: "ulsan" | "busan" | "gyeongju";
   address: string;
   latitude: number;
   longitude: number;

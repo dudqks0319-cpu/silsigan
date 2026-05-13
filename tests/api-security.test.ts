@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const { createQuestion, createReport, listPublicReports } = await import(
-  new URL("../src/lib/mock-store.ts", import.meta.url).href
-);
+const {
+  blockReportAuthor,
+  createQuestion,
+  createReport,
+  listPublicReports,
+  listUserBlocks,
+  requestAccountDeletion,
+  unblockUser,
+} = await import(new URL("../src/lib/mock-store.ts", import.meta.url).href);
 const store = await import(new URL("../src/lib/store.ts", import.meta.url).href);
 const { validatePhotoUpload, sanitizePhotoUpload } = await import(
   new URL("../src/lib/photo-validation.ts", import.meta.url).href
@@ -112,6 +118,30 @@ test("photo uploads use a dedicated rate limit bucket", () => {
     () => checkRateLimit({ action: "upload_report_photo", actorId: "actor-photo", now: 2_000 }),
     (error: unknown) => (error as { code?: string }).code === "RATE_LIMITED",
   );
+});
+
+test("blocked report authors are hidden from the viewer public feed", () => {
+  const actorId = `blocker-${crypto.randomUUID()}`;
+  const before = listPublicReports({ placeId: "busan-gwangalli" }, { actorId });
+  const targetReport = before.find((report: { id: string }) => report.id === "report_seed_busan_1");
+
+  assert.ok(targetReport);
+  const block = blockReportAuthor({ reportId: "report_seed_busan_1" }, { actorId });
+  assert.equal(listUserBlocks({ actorId }).some((entry: { blockedUserId: string }) => entry.blockedUserId === block.blockedUserId), true);
+
+  const after = listPublicReports({ placeId: "busan-gwangalli" }, { actorId });
+  assert.equal(after.some((report: { id: string }) => report.id === "report_seed_busan_1"), false);
+
+  unblockUser({ blockedUserId: block.blockedUserId }, { actorId });
+  const restored = listPublicReports({ placeId: "busan-gwangalli" }, { actorId });
+  assert.equal(restored.some((report: { id: string }) => report.id === "report_seed_busan_1"), true);
+});
+
+test("account deletion requests use pending status until an operator handles them", () => {
+  const actorId = `delete-${crypto.randomUUID()}`;
+  const request = requestAccountDeletion({ reason: "계정 정리 요청" }, { actorId });
+
+  assert.equal(request.status, "pending");
 });
 
 test("production and preview environments cannot silently fall back to mock store", () => {

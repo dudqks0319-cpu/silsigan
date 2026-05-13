@@ -68,6 +68,7 @@ export type VerifiedRadiusM = 50 | 150 | 300;
 
 export type StoredReport = {
   id: string;
+  userId: string;
   placeId: string;
   category: ReportCategory;
   crowdLevel: CrowdLevel;
@@ -86,6 +87,7 @@ export type StoredReport = {
 
 export type StoredQuestion = {
   id: string;
+  userId: string;
   placeId: string;
   questionType: QuestionType;
   body: string;

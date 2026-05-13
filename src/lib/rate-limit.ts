@@ -1,6 +1,13 @@
 import { ApiError } from "./errors.ts";
 
-type RateLimitAction = "create_report" | "upload_report_photo" | "create_question" | "flag_report";
+type RateLimitAction =
+  | "create_report"
+  | "upload_report_photo"
+  | "create_question"
+  | "flag_report"
+  | "block_user"
+  | "unblock_user"
+  | "request_account_deletion";
 
 type RateLimitRule = {
   limit: number;
@@ -12,6 +19,9 @@ const rules: Record<RateLimitAction, RateLimitRule> = {
   upload_report_photo: { limit: 6, windowMs: 60_000 },
   create_question: { limit: 20, windowMs: 60_000 },
   flag_report: { limit: 8, windowMs: 60_000 },
+  block_user: { limit: 10, windowMs: 60_000 },
+  unblock_user: { limit: 10, windowMs: 60_000 },
+  request_account_deletion: { limit: 3, windowMs: 60_000 },
 };
 
 const buckets = new Map<string, { count: number; resetAt: number }>();

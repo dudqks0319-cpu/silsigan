@@ -8,7 +8,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const placeId = url.searchParams.get("placeId") ?? undefined;
 
-    return ok(await listPublicQuestions(placeId), {
+    const actorId = actorIdFromRequest(request);
+
+    return ok(await listPublicQuestions(placeId, { actorId, request }), {
       privacy: "질문 목록은 장소 기준으로 제공되며 사용자 위치를 포함하지 않습니다."
     });
   } catch (error) {

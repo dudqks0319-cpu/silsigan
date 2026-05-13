@@ -87,6 +87,23 @@ export async function getRequiredUserId(request: Request) {
   return data.user.id;
 }
 
+export async function getOptionalUserId(request: Request) {
+  const token = getBearerToken(request);
+
+  if (!token) {
+    return null;
+  }
+
+  const supabase = createSupabaseUserClient(request);
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data.user) {
+    return null;
+  }
+
+  return data.user.id;
+}
+
 export async function ensureProfile(userId: string) {
   const supabase = createSupabaseServiceClient();
   const { error } = await supabase.rpc("ensure_profile_with_signup_bonus", {

@@ -11,7 +11,9 @@ export async function GET(request: Request) {
       includeExpired: url.searchParams.get("includeExpired") ?? undefined,
     });
 
-    return ok(await listPublicReports(filters), {
+    const actorId = actorIdFromRequest(request);
+
+    return ok(await listPublicReports(filters, { actorId, request }), {
       privacy: "정확한 내 위치는 보여주지 않고 현장 인증 여부만 표시합니다.",
     });
   } catch (error) {

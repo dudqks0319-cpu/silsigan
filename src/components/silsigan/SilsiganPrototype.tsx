@@ -20,6 +20,7 @@ import {
   Ticket,
   TrendingUp,
   Upload,
+  UserX,
   Wind,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -75,6 +76,12 @@ type PublicQuestion = {
   body: string;
   creditCost: 1 | 2;
   answeredReportId: string | null;
+  createdAt: string;
+};
+
+type UserBlock = {
+  blockedUserId: string;
+  label: string;
   createdAt: string;
 };
 
@@ -153,6 +160,7 @@ export default function SilsiganPrototype() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [reports, setReports] = useState<PublicReport[]>([]);
   const [questions, setQuestions] = useState<PublicQuestion[]>([]);
+  const [userBlocks, setUserBlocks] = useState<UserBlock[]>([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState("ulsan-taehwagang");
   const [reportDraft, setReportDraft] = useState<ReportDraft>(initialReport);
   const [questionDraft, setQuestionDraft] = useState<QuestionDraft>(initialQuestion);
@@ -191,10 +199,11 @@ export default function SilsiganPrototype() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [placesResponse, reportsResponse, questionsResponse] = await Promise.all([
+      const [placesResponse, reportsResponse, questionsResponse, userBlocksResponse] = await Promise.all([
         fetchJson<ApiPlace[]>("/api/places"),
         fetchJson<PublicReport[]>("/api/reports"),
         fetchJson<PublicQuestion[]>("/api/questions"),
+        fetchJson<UserBlock[]>("/api/user-blocks").catch(() => []),
       ]);
 
       const mappedPlaces = mapPlaces(placesResponse, reportsResponse, questionsResponse);
@@ -213,6 +222,7 @@ export default function SilsiganPrototype() {
       setPlaces(mappedPlaces);
       setReports(reportsResponse);
       setQuestions(questionsResponse);
+      setUserBlocks(userBlocksResponse);
       setPlaceContexts(contextResponse);
 
       if (deepLinkedPlace) {
@@ -462,6 +472,42 @@ export default function SilsiganPrototype() {
     }
   };
 
+  const blockSelectedReportAuthor = async () => {
+    const reportId = selectedReports[0]?.id;
+    if (!reportId) {
+      setToast("숨길 제보 작성자를 찾지 못했습니다.");
+      return;
+    }
+
+    try {
+      const block = await fetchJson<UserBlock>("/api/user-blocks", {
+        method: "POST",
+        body: JSON.stringify({ reportId }),
+      });
+      setUserBlocks((current) =>
+        current.some((candidate) => candidate.blockedUserId === block.blockedUserId) ? current : [block, ...current],
+      );
+      setToast("이 사용자의 제보와 질문을 내 화면에서 숨겼습니다. 마이에서 차단 해제할 수 있어요.");
+      await loadData();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "사용자 차단에 실패했습니다.");
+    }
+  };
+
+  const unblockUser = async (blockedUserId: string) => {
+    try {
+      await fetchJson("/api/user-blocks", {
+        method: "DELETE",
+        body: JSON.stringify({ blockedUserId }),
+      });
+      setUserBlocks((current) => current.filter((block) => block.blockedUserId !== blockedUserId));
+      setToast("차단을 해제했습니다. 해당 사용자의 공개 제보와 질문이 다시 보일 수 있어요.");
+      await loadData();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "차단 해제에 실패했습니다.");
+    }
+  };
+
   const openPhotoPicker = () => {
     if (requestPolicyConsent("photo")) {
       return;
@@ -587,6 +633,7 @@ export default function SilsiganPrototype() {
               {activeTab === "place" && selectedPlace && (
                 <PlaceScreen
                   flagged={flagged}
+                  onBlockReporter={blockSelectedReportAuthor}
                   onFlag={reportSensitiveContent}
                   onAnswerQuestion={answerQuestion}
                   onGoQuestion={() => setActiveTab("question")}
@@ -640,6 +687,8 @@ export default function SilsiganPrototype() {
                   questionsSubmitted={questionsSubmitted}
                   reportsSubmitted={reportsSubmitted}
                   trustScore={trustScore}
+                  userBlocks={userBlocks}
+                  onUnblockUser={unblockUser}
                 />
               )}
             </>
@@ -698,6 +747,7 @@ function HomeScreen({
   onAnswerQuestion: (question: PublicQuestion) => void;
   onSelectPlace: (place: Place) => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
   const calmPlaces = places.filter((place) => place.crowdLevel === "quiet" || place.crowdLevel === "normal");
   const busyPlaces = places.filter((place) => place.crowdLevel === "busy" || place.crowdLevel === "packed");
   const recentReports = getRecentReports(reports, 8);
@@ -706,12 +756,20 @@ function HomeScreen({
   const featuredReport = photoReports[0];
   const featuredPlace = featuredReport ? places.find((candidate) => candidate.id === featuredReport.placeId) : null;
   const popularPlaces = getPopularPlaces(places, reports, questions, navigationIntentByPlaceId, placeContexts).slice(0, 4);
+  const searchResults = searchQuery.trim()
+    ? places.filter((place) => matchesPlaceSearch(place, searchQuery)).slice(0, 4)
+    : [];
 
   return (
     <div className="screen-stack">
       <label className="search-box">
         <Search size={20} />
-        <input placeholder="지금 어디가 궁금하세요?" type="search" />
+        <input
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="지금 어디가 궁금하세요?"
+          type="search"
+          value={searchQuery}
+        />
       </label>
       <div className="search-suggestion-row" aria-label="추천 검색어">
         <span>추천 검색어</span>
@@ -730,6 +788,26 @@ function HomeScreen({
           );
         })}
       </div>
+      {searchQuery.trim() && (
+        <section className="search-results-card" aria-label="검색 결과">
+          <div className="section-title">
+            <h2>검색 결과</h2>
+            <span>{searchResults.length}곳</span>
+          </div>
+          {searchResults.length === 0 ? (
+            <p>아직 등록된 장소가 없어요. 울산·부산·경주 핵심 장소부터 베타로 늘려갈게요.</p>
+          ) : (
+            searchResults.map((place) => (
+              <button key={place.id} onClick={() => onSelectPlace(place)} type="button">
+                <strong>{place.name}</strong>
+                <span>
+                  {categoryLabels[place.category]} · 사람 {place.status} · 주차 {place.parking}
+                </span>
+              </button>
+            ))
+          )}
+        </section>
+      )}
       <section className="home-brand-card" aria-label="서비스 핵심 메시지">
         <p className="eyebrow">출발 전 확인</p>
         <h2>출발 전 10초, 지금 현장 먼저 확인.</h2>
@@ -1092,6 +1170,7 @@ function MapScreen({
 
 function PlaceScreen({
   flagged,
+  onBlockReporter,
   onFlag,
   onAnswerQuestion,
   onGoQuestion,
@@ -1106,6 +1185,7 @@ function PlaceScreen({
   reports,
 }: {
   flagged: boolean;
+  onBlockReporter: () => void;
   onFlag: () => void;
   onAnswerQuestion: (question: PublicQuestion) => void;
   onGoQuestion: () => void;
@@ -1182,15 +1262,30 @@ function PlaceScreen({
           <h2>최근 현장 사진</h2>
           <span>{reports.length}건</span>
         </div>
-        <div className="photo-grid">
-          {(reports.length ? reports : []).slice(0, 3).map((report, index) => (
-            <div className="photo-tile" key={report.id}>
-              <Camera size={22} />
-              <span>{report.comment ?? place.photos[index] ?? "현장 제보"}</span>
-              <small>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · {report.photoUrl ? "사진 있음" : "사진 없음"}</small>
+        {reports.length === 0 ? (
+          <div className="empty-report-card">
+            <strong>아직 최근 제보가 없어요.</strong>
+            <p>현장에 있다면 첫 제보를 남기고 물어보기권을 받아보세요.</p>
+            <div>
+              <button onClick={onGoReport} type="button">
+                지금 상황 알려주기
+              </button>
+              <button onClick={onGoQuestion} type="button">
+                여기 지금 어때요?
+              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="photo-grid">
+            {reports.slice(0, 3).map((report, index) => (
+              <div className="photo-tile" key={report.id}>
+                <Camera size={22} />
+                <span>{report.comment ?? place.photos[index] ?? "현장 제보"}</span>
+                <small>{minutesAgo(report.createdAt)} · {verificationLabel(report)} · {report.photoUrl ? "사진 있음" : "사진 없음"}</small>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="report-trust-grid">
           <ReportTrustGroup title="현장 인증 제보" reports={verifiedReports} />
           <ReportTrustGroup title="인증 없는 제보" reports={unverifiedReports} />
@@ -1229,6 +1324,7 @@ function PlaceScreen({
             </article>
           ))
         )}
+        <p className="question-wait-note">질문 등록 후에는 근처 사용자에게 물어보는 중으로 표시됩니다. 답변 전까지는 공유해서 현장 답변을 요청할 수 있어요.</p>
       </section>
 
       <div className="sticky-actions">
@@ -1255,10 +1351,16 @@ function PlaceScreen({
         </div>
       </section>
       <ShareSnapshotCard context={placeContext} onShare={() => onSharePlace(place, reports)} place={place} reports={reports} />
-      <ActionButton onClick={onFlag} variant="danger" disabled={flagged}>
-        <Flag size={18} />
-        {flagged ? "신고 접수됨" : "문제 있는 제보 신고"}
-      </ActionButton>
+      <section className="moderation-actions-card" aria-label="신고와 사용자 차단">
+        <ActionButton onClick={onFlag} variant="danger" disabled={flagged}>
+          <Flag size={18} />
+          {flagged ? "신고 접수됨" : "문제 있는 제보 신고"}
+        </ActionButton>
+        <ActionButton onClick={onBlockReporter} variant="secondary" disabled={reports.length === 0}>
+          <UserX size={18} />이 사용자의 제보 숨기기
+        </ActionButton>
+        <p>신고 후 원치 않는 작성자를 차단하면 그 사용자의 제보와 질문이 내 화면에서 숨겨집니다.</p>
+      </section>
     </div>
   );
 }
@@ -1280,6 +1382,7 @@ function PlaceContextPanel({ context }: { context: PlaceContext }) {
           </span>
         </div>
       </div>
+      <p className="context-source-note">참고 정보는 공공 API 또는 베타 기본 데이터를 기준으로 표시됩니다. 실제 현장 상황은 최근 제보를 우선 확인하세요.</p>
       <div className="context-grid">
         <article>
           <Wind size={18} />
@@ -1700,15 +1803,19 @@ function QuestionScreen({
 function MyScreen({
   askCredits,
   answersSubmitted,
+  onUnblockUser,
   questionsSubmitted,
   reportsSubmitted,
   trustScore,
+  userBlocks,
 }: {
   askCredits: number;
   answersSubmitted: number;
+  onUnblockUser: (blockedUserId: string) => void;
   questionsSubmitted: number;
   reportsSubmitted: number;
   trustScore: number;
+  userBlocks: UserBlock[];
 }) {
   return (
     <div className="screen-stack">
@@ -1745,14 +1852,37 @@ function MyScreen({
         </div>
         <div>
           <ShieldAlert size={22} />
-          <strong>0</strong>
-          <span>신고/삭제된 제보</span>
+          <strong>{userBlocks.length}</strong>
+          <span>차단 사용자</span>
         </div>
         <div>
           <ShieldCheck size={22} />
           <strong>{trustScore}</strong>
           <span>신뢰도</span>
         </div>
+      </section>
+      <section className="blocked-users-card">
+        <div>
+          <h2>차단한 사용자 목록</h2>
+          <p>차단한 사용자의 제보와 질문은 내 화면에서 숨겨집니다.</p>
+        </div>
+        {userBlocks.length === 0 ? (
+          <span>아직 차단한 사용자가 없습니다.</span>
+        ) : (
+          <ul>
+            {userBlocks.map((block) => (
+              <li key={block.blockedUserId}>
+                <div>
+                  <strong>{block.label}</strong>
+                  <span>{minutesAgo(block.createdAt)} 차단</span>
+                </div>
+                <button onClick={() => onUnblockUser(block.blockedUserId)} type="button">
+                  차단 해제
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
       <section className="policy-list">
         <h2>안전 정책</h2>
@@ -2002,6 +2132,49 @@ function popularReason(
   return `최근 제보 ${reportCount}건`;
 }
 
+function matchesPlaceSearch(place: Place, query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  const haystack = normalizeSearchText(
+    [
+      place.name,
+      place.address,
+      place.status,
+      place.summary,
+      place.line,
+      place.parking,
+      categoryLabels[place.category],
+      place.category,
+      place.region,
+      place.goSignal,
+    ].join(" "),
+  );
+  const keywordMap: Record<string, string[]> = {
+    웨이팅: ["줄", "대기", "line", "restaurant_cafe"],
+    줄: ["줄", "대기", "line"],
+    주차: ["주차", "parking"],
+    만차: ["만차", "full"],
+    "사람 많음": ["혼잡", "매우 혼잡", "packed", "busy"],
+    혼잡: ["혼잡", "packed", "busy"],
+    한산: ["한산", "quiet", "normal"],
+    병원: ["병원", "hospital"],
+    관공서: ["관공서", "public_office"],
+    관광: ["관광", "tourism", "festival"],
+    축제: ["축제", "festival"],
+  };
+  const mappedTerms = keywordMap[normalizedQuery] ?? [];
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+
+  return (
+    haystack.includes(normalizedQuery) ||
+    queryTokens.every((token) => haystack.includes(token)) ||
+    mappedTerms.some((term) => haystack.includes(normalizeSearchText(term)))
+  );
+}
+
+function normalizeSearchText(value: string) {
+  return value.trim().toLocaleLowerCase("ko-KR").replace(/\s+/g, " ");
+}
+
 function contextPriority(context: PlaceContext) {
   const weather = context.weather.alertLevel === "warning" ? 4 : context.weather.alertLevel === "watch" ? 2 : 0;
   const demand = context.tourismDemand.level === "high" ? 2 : context.tourismDemand.level === "normal" ? 1 : 0;
@@ -2100,6 +2273,7 @@ function mapPlaces(apiPlaces: ApiPlace[], reports: PublicReport[], questions: Pu
       id: place.id,
       name: place.name,
       category: place.category,
+      region: place.region,
       address: place.address,
       latitude: place.latitude,
       longitude: place.longitude,

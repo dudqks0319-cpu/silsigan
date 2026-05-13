@@ -4,8 +4,8 @@
   "description": "출발 전 10초, 지금 거기 상황을 사진과 위치 인증으로 확인하세요.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7faf9",
-  "theme_color": "#087f8c",
+  "background_color": "#f4f8ff",
+  "theme_color": "#2563eb",
   "lang": "ko",
   "icons": [
     {
