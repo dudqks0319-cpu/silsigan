@@ -79,6 +79,10 @@ type PublicQuestion = {
   createdAt: string;
 };
 
+type MyQuestion = PublicQuestion & {
+  status: "pending" | "answered" | "expired";
+};
+
 type UserBlock = {
   blockedUserId: string;
   label: string;
@@ -160,6 +164,7 @@ export default function SilsiganPrototype() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [reports, setReports] = useState<PublicReport[]>([]);
   const [questions, setQuestions] = useState<PublicQuestion[]>([]);
+  const [myQuestions, setMyQuestions] = useState<MyQuestion[]>([]);
   const [userBlocks, setUserBlocks] = useState<UserBlock[]>([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState("ulsan-taehwagang");
   const [reportDraft, setReportDraft] = useState<ReportDraft>(initialReport);
@@ -199,10 +204,11 @@ export default function SilsiganPrototype() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [placesResponse, reportsResponse, questionsResponse, userBlocksResponse] = await Promise.all([
+      const [placesResponse, reportsResponse, questionsResponse, myQuestionsResponse, userBlocksResponse] = await Promise.all([
         fetchJson<ApiPlace[]>("/api/places"),
         fetchJson<PublicReport[]>("/api/reports"),
         fetchJson<PublicQuestion[]>("/api/questions"),
+        fetchJson<MyQuestion[]>("/api/my-questions").catch(() => []),
         fetchJson<UserBlock[]>("/api/user-blocks").catch(() => []),
       ]);
 
@@ -222,6 +228,7 @@ export default function SilsiganPrototype() {
       setPlaces(mappedPlaces);
       setReports(reportsResponse);
       setQuestions(questionsResponse);
+      setMyQuestions(myQuestionsResponse);
       setUserBlocks(userBlocksResponse);
       setPlaceContexts(contextResponse);
 
@@ -465,7 +472,7 @@ export default function SilsiganPrototype() {
         }),
       });
       setFlagged(true);
-      setToast("문제 있는 제보 신고가 접수되었습니다. 운영자 큐에서 검토합니다.");
+      setToast("신고가 접수되었습니다. 이 작성자의 제보를 내 화면에서 숨길 수 있어요.");
       await loadData();
     } catch (error) {
       setToast(error instanceof Error ? error.message : "신고 접수에 실패했습니다.");
@@ -684,6 +691,7 @@ export default function SilsiganPrototype() {
                 <MyScreen
                   askCredits={askCredits}
                   answersSubmitted={answersSubmitted}
+                  myQuestions={myQuestions}
                   questionsSubmitted={questionsSubmitted}
                   reportsSubmitted={reportsSubmitted}
                   trustScore={trustScore}
@@ -1356,6 +1364,16 @@ function PlaceScreen({
           <Flag size={18} />
           {flagged ? "신고 접수됨" : "문제 있는 제보 신고"}
         </ActionButton>
+        {flagged && (
+          <div className="post-flag-block-card">
+            <strong>신고가 접수되었습니다.</strong>
+            <p>이 작성자의 제보를 내 화면에서 숨길 수 있어요.</p>
+            <button onClick={onBlockReporter} type="button">
+              <UserX size={17} />
+              작성자 차단하기
+            </button>
+          </div>
+        )}
         <ActionButton onClick={onBlockReporter} variant="secondary" disabled={reports.length === 0}>
           <UserX size={18} />이 사용자의 제보 숨기기
         </ActionButton>
@@ -1763,6 +1781,7 @@ function QuestionScreen({
         </div>
       </div>
       <p className="question-status-note">질문 등록 후 근처 사용자에게 물어보는 중 상태로 표시됩니다.</p>
+      <p className="question-status-note">답변이 오면 내 질문에서 확인할 수 있어요.</p>
       <div className="example-chips" aria-label="예시 질문">
         {["지금 주차 가능해요?", "줄 얼마나 길어요?", "사람 너무 많나요?", "사진 한 장 가능할까요?", "대기 얼마나 걸려요?"].map((example) => (
           <button key={example} onClick={() => onChange({ ...draft, content: example })} type="button">
@@ -1803,6 +1822,7 @@ function QuestionScreen({
 function MyScreen({
   askCredits,
   answersSubmitted,
+  myQuestions,
   onUnblockUser,
   questionsSubmitted,
   reportsSubmitted,
@@ -1811,6 +1831,7 @@ function MyScreen({
 }: {
   askCredits: number;
   answersSubmitted: number;
+  myQuestions: MyQuestion[];
   onUnblockUser: (blockedUserId: string) => void;
   questionsSubmitted: number;
   reportsSubmitted: number;
@@ -1861,6 +1882,7 @@ function MyScreen({
           <span>신뢰도</span>
         </div>
       </section>
+      <MyQuestionsList questions={myQuestions} />
       <section className="blocked-users-card">
         <div>
           <h2>차단한 사용자 목록</h2>
@@ -1896,6 +1918,36 @@ function MyScreen({
         <a href="/account/delete">계정 삭제</a>
       </section>
     </div>
+  );
+}
+
+function MyQuestionsList({ questions }: { questions: MyQuestion[] }) {
+  return (
+    <section className="my-questions-card">
+      <div>
+        <h2>내 질문</h2>
+        <p>답변이 도착하면 이곳에서 바로 확인할 수 있어요.</p>
+      </div>
+      {questions.length === 0 ? (
+        <span>아직 등록한 질문이 없습니다.</span>
+      ) : (
+        <ul>
+          {questions.slice(0, 5).map((question) => (
+            <li key={question.id}>
+              <div>
+                <strong>{question.body}</strong>
+                <span>
+                  {questionTypeLabels[question.questionType]} · {minutesAgo(question.createdAt)}
+                </span>
+              </div>
+              <em className={`question-status-badge question-status-badge--${question.status}`}>
+                {questionStatusLabel(question.status)}
+              </em>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -2356,4 +2408,16 @@ function signalClass(signal: Place["goSignal"]) {
 
 function verificationLabel(report: Pick<PublicReport, "verifiedRadiusM">) {
   return report.verifiedRadiusM ? "현장 인증" : "인증 없음";
+}
+
+function questionStatusLabel(status: MyQuestion["status"]) {
+  if (status === "answered") {
+    return "답변 완료";
+  }
+
+  if (status === "expired") {
+    return "만료됨";
+  }
+
+  return "답변 대기";
 }

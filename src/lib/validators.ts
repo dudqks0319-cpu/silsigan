@@ -81,3 +81,11 @@ export const accountDeletionRequestSchema = z.object({
 });
 
 export type AccountDeletionRequestInput = z.infer<typeof accountDeletionRequestSchema>;
+
+export const accountDeletionActionSchema = z.object({
+  requestId: z.string().uuid(),
+  status: z.enum(["processing", "completed", "rejected"]),
+  operatorNote: z.string().trim().max(300).optional(),
+});
+
+export type AccountDeletionActionInput = z.infer<typeof accountDeletionActionSchema>;

@@ -2,6 +2,7 @@ import {
   type FlagReason,
   type CreditEvent,
   type Place,
+  REPORT_TTL_HOURS,
   type StoredQuestion,
   type StoredReport,
   creditEventForQuestion,
@@ -18,6 +19,7 @@ import { ApiError } from "./errors.ts";
 import { sanitizePhotoUpload } from "./photo-validation.ts";
 import type {
   AccountDeletionRequestInput,
+  AccountDeletionActionInput,
   BlockReportAuthorInput,
   CreateQuestionInput,
   CreateReportInput,
@@ -166,7 +168,17 @@ const questions: StoredQuestion[] = [
 
 const flagsByReportId = new Map<string, FlagReason[]>();
 const creditEventsByActorId = new Map<string, CreditEvent[]>();
-const accountDeletionRequestsByActorId = new Map<string, { id: string; requestedAt: string; status: "pending" }>();
+type MockAccountDeletionRequest = {
+  id: string;
+  userId: string;
+  reason: string | null;
+  requestedAt: string;
+  processedAt: string | null;
+  operatorNote: string | null;
+  status: "pending" | "processing" | "completed" | "rejected";
+};
+
+const accountDeletionRequestsByActorId = new Map<string, MockAccountDeletionRequest>();
 const blockedUsersByActorId = new Map<string, Map<string, string>>();
 
 type CreateQuestionOptions = {
@@ -313,6 +325,15 @@ export function listPublicQuestions(placeId?: string, options: { actorId?: strin
   return listQuestions(placeId, options).map(maskQuestionForPublic);
 }
 
+export function listMyQuestions(options: { actorId?: string } = {}) {
+  const actorId = options.actorId ?? "demo-user";
+
+  return questions
+    .filter((question) => question.userId === actorId)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .map(maskQuestionForOwner);
+}
+
 export function createQuestion(input: CreateQuestionInput, options: CreateQuestionOptions = {}) {
   findPlace(input.placeId);
 
@@ -442,13 +463,16 @@ export function requestAccountDeletion(input: AccountDeletionRequestInput, optio
   const actorId = options.actorId ?? "demo-user";
   const existing = accountDeletionRequestsByActorId.get(actorId);
 
-  if (existing) {
+  if (existing && existing.status === "pending") {
     return existing;
   }
 
   const request = {
     id: `account_deletion_${crypto.randomUUID()}`,
+    userId: actorId,
     requestedAt: new Date().toISOString(),
+    processedAt: null,
+    operatorNote: null,
     status: "pending" as const,
     reason: input.reason ?? null,
   };
@@ -456,6 +480,26 @@ export function requestAccountDeletion(input: AccountDeletionRequestInput, optio
   accountDeletionRequestsByActorId.set(actorId, request);
 
   return request;
+}
+
+export function listAccountDeletionRequests() {
+  return Array.from(accountDeletionRequestsByActorId.values())
+    .sort((left, right) => new Date(right.requestedAt).getTime() - new Date(left.requestedAt).getTime())
+    .map(maskAccountDeletionRequestForAdmin);
+}
+
+export function handleAccountDeletionRequest(input: AccountDeletionActionInput) {
+  const request = Array.from(accountDeletionRequestsByActorId.values()).find((candidate) => candidate.id === input.requestId);
+
+  if (!request) {
+    throw new ApiError(404, "ACCOUNT_DELETION_NOT_FOUND", "계정 삭제 요청을 찾지 못했습니다.");
+  }
+
+  request.status = input.status;
+  request.operatorNote = input.operatorNote ?? request.operatorNote;
+  request.processedAt = input.status === "processing" ? null : new Date().toISOString();
+
+  return maskAccountDeletionRequestForAdmin(request);
 }
 
 function addCredits(actorId: string, events: ReturnType<typeof creditEventsForReport>) {
@@ -509,6 +553,39 @@ function maskQuestionForPublic(question: StoredQuestion) {
     creditCost: question.creditCost,
     answeredReportId: question.answeredReportId,
     createdAt: question.createdAt,
+  };
+}
+
+function maskQuestionForOwner(question: StoredQuestion) {
+  return {
+    ...maskQuestionForPublic(question),
+    status: questionStatus(question),
+  };
+}
+
+function questionStatus(question: StoredQuestion, now = new Date()) {
+  if (question.answeredReportId) {
+    return "answered";
+  }
+
+  const expiresAt = new Date(new Date(question.createdAt).getTime() + REPORT_TTL_HOURS * 60 * 60 * 1000);
+  if (expiresAt.getTime() <= now.getTime()) {
+    return "expired";
+  }
+
+  return "pending";
+}
+
+function maskAccountDeletionRequestForAdmin(request: MockAccountDeletionRequest) {
+  return {
+    id: request.id,
+    userId: request.userId,
+    label: `익명 계정 ${request.userId.slice(0, 8)}`,
+    reason: request.reason,
+    status: request.status,
+    requestedAt: request.requestedAt,
+    processedAt: request.processedAt,
+    operatorNote: request.operatorNote,
   };
 }
 

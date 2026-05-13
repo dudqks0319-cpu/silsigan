@@ -3,6 +3,7 @@ import {
   type FlagReason,
   type Place,
   type QuestionType,
+  REPORT_TTL_HOURS,
   type ReportCategory,
   type VerifiedRadiusM,
   creditEventForQuestion,
@@ -23,6 +24,7 @@ import {
 } from "./supabase-server.ts";
 import type {
   AccountDeletionRequestInput,
+  AccountDeletionActionInput,
   BlockReportAuthorInput,
   CreateQuestionInput,
   CreateReportInput,
@@ -81,7 +83,11 @@ type StalePhotoUploadRow = {
 
 type AccountDeletionRequestRow = {
   id: string;
+  user_id?: string;
+  reason?: string | null;
   requested_at: string;
+  processed_at?: string | null;
+  operator_note?: string | null;
   status: "pending" | "processing" | "completed" | "rejected";
 };
 
@@ -295,6 +301,24 @@ export async function listPublicQuestions(placeId?: string, options: { request?:
       answeredReportId: question.answered_report_id,
       createdAt: question.created_at,
     }));
+}
+
+export async function listMyQuestions(options: { request: Request }) {
+  const userId = await getRequiredUserId(options.request);
+  await ensureProfile(userId);
+
+  const { data, error } = await createSupabaseServiceClient()
+    .from("questions")
+    .select("id, user_id, place_id, question_type, body, credit_cost, answered_report_id, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    throwSupabaseError(error, "MY_QUESTIONS_FETCH_FAILED", "내 질문 목록을 불러오지 못했습니다.");
+  }
+
+  return ((data ?? []) as QuestionRow[]).map(mapQuestionRowForOwner);
 }
 
 export async function createQuestion(input: CreateQuestionInput, options: { request: Request }) {
@@ -632,6 +656,40 @@ export async function requestAccountDeletion(input: AccountDeletionRequestInput,
   };
 }
 
+export async function listAccountDeletionRequests() {
+  const { data, error } = await createSupabaseServiceClient()
+    .from("account_deletion_requests")
+    .select("id, user_id, reason, status, requested_at, processed_at, operator_note")
+    .order("requested_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    throwSupabaseError(error, "ACCOUNT_DELETION_QUEUE_FAILED", "계정 삭제 요청 큐를 불러오지 못했습니다.");
+  }
+
+  return ((data ?? []) as AccountDeletionRequestRow[]).map(mapAccountDeletionRequestForAdmin);
+}
+
+export async function handleAccountDeletionRequest(input: AccountDeletionActionInput) {
+  const processedAt = input.status === "processing" ? null : new Date().toISOString();
+  const { data, error } = await createSupabaseServiceClient()
+    .from("account_deletion_requests")
+    .update({
+      status: input.status,
+      processed_at: processedAt,
+      operator_note: input.operatorNote ?? null,
+    })
+    .eq("id", input.requestId)
+    .select("id, user_id, reason, status, requested_at, processed_at, operator_note")
+    .single();
+
+  if (error) {
+    throwSupabaseError(error, "ACCOUNT_DELETION_ACTION_FAILED", "계정 삭제 요청 처리 상태를 저장하지 못했습니다.");
+  }
+
+  return mapAccountDeletionRequestForAdmin(data as AccountDeletionRequestRow);
+}
+
 async function findPlace(placeId: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
@@ -743,6 +801,47 @@ async function getBlockedUserIdsForRequest(request?: Request) {
 
 function blockedUserLabel(blockedUserId: string) {
   return `익명 사용자 ${blockedUserId.slice(0, 8)}`;
+}
+
+function mapQuestionRowForOwner(question: QuestionRow) {
+  return {
+    id: question.id,
+    placeId: question.place_id,
+    questionType: question.question_type,
+    body: question.body,
+    creditCost: question.credit_cost,
+    answeredReportId: question.answered_report_id,
+    createdAt: question.created_at,
+    status: questionStatus(question),
+  };
+}
+
+function questionStatus(question: Pick<QuestionRow, "answered_report_id" | "created_at">, now = new Date()) {
+  if (question.answered_report_id) {
+    return "answered";
+  }
+
+  const expiresAt = new Date(new Date(question.created_at).getTime() + REPORT_TTL_HOURS * 60 * 60 * 1000);
+  if (expiresAt.getTime() <= now.getTime()) {
+    return "expired";
+  }
+
+  return "pending";
+}
+
+function mapAccountDeletionRequestForAdmin(request: AccountDeletionRequestRow) {
+  const userId = request.user_id ?? "unknown";
+
+  return {
+    id: request.id,
+    userId,
+    label: `익명 계정 ${userId.slice(0, 8)}`,
+    reason: request.reason ?? null,
+    status: request.status,
+    requestedAt: request.requested_at,
+    processedAt: request.processed_at ?? null,
+    operatorNote: request.operator_note ?? null,
+  };
 }
 
 async function hideReportWithOptionalPhotoDelete(reportId: string, update: Record<string, unknown>) {

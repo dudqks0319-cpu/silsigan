@@ -83,6 +83,7 @@ pnpm cap:open:android
 - 모바일 폭에서는 phone-frame 장식, border, shadow를 제거하고 `100dvh`와 safe-area inset을 사용해 실제 앱 화면처럼 보이게 한다.
 - 로컬 검증은 iOS 시뮬레이터는 `pnpm cap:sync:ios:local`, Android 에뮬레이터는 `pnpm cap:sync:android:local`로 개발 서버 URL을 지정해 진행할 수 있다.
 - Android `assembleDebug` 빌드에는 로컬 JDK가 필요하다.
+- GitHub Actions Android Debug 빌드는 `.github/workflows/android.yml`에서 JDK 21, `pnpm verify`, `pnpm cap:sync:android:local`, `./gradlew assembleDebug` 순서로 검증한다.
 - iOS `Info.plist`에는 위치/카메라/사진 보관함 권한 목적 문구가 들어 있고, Android Manifest에는 현장 인증용 위치 권한이 선언되어 있다.
 - Apple App Store와 Google Play 정식 제출 전에는 UGC 사용자 차단, 계정 삭제 처리, 위치/사진 권한 문구, 스토어 심사용 계정과 스크린샷을 별도로 준비해야 한다.
 

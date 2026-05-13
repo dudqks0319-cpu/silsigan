@@ -148,6 +148,10 @@ img {
   font-size: 14px;
 }
 
+.admin-card--account-deletion {
+  align-items: flex-start;
+}
+
 .legal-page {
   min-height: 100vh;
   padding: 32px 16px;
@@ -1835,6 +1839,37 @@ img {
   line-height: 1.45;
 }
 
+.post-flag-block-card {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  background: #eff6ff;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 16px;
+}
+
+.post-flag-block-card strong {
+  color: var(--accent-strong);
+  font-size: 14px;
+}
+
+.post-flag-block-card p {
+  color: #344054;
+}
+
+.post-flag-block-card button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 13px;
+  font-weight: 900;
+}
+
 .upload-box {
   display: grid;
   place-items: center;
@@ -2034,7 +2069,8 @@ img {
   font-weight: 900;
 }
 
-.blocked-users-card {
+.blocked-users-card,
+.my-questions-card {
   padding: 16px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -2042,19 +2078,25 @@ img {
 }
 
 .blocked-users-card h2,
-.blocked-users-card p {
+.blocked-users-card p,
+.my-questions-card h2,
+.my-questions-card p {
   margin: 0;
 }
 
 .blocked-users-card p,
 .blocked-users-card > span,
-.blocked-users-card li span {
+.blocked-users-card li span,
+.my-questions-card p,
+.my-questions-card > span,
+.my-questions-card li span {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
 }
 
-.blocked-users-card ul {
+.blocked-users-card ul,
+.my-questions-card ul {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -2062,7 +2104,8 @@ img {
   list-style: none;
 }
 
-.blocked-users-card li {
+.blocked-users-card li,
+.my-questions-card li {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2072,7 +2115,8 @@ img {
   border-radius: 14px;
 }
 
-.blocked-users-card li div {
+.blocked-users-card li div,
+.my-questions-card li div {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -2088,6 +2132,30 @@ img {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 900;
+}
+
+.question-status-badge {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.question-status-badge--pending {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.question-status-badge--answered {
+  color: #047857;
+  background: #dcfce7;
+}
+
+.question-status-badge--expired {
+  color: #667085;
+  background: #eaecf0;
 }
 
 .policy-modal-backdrop {
@@ -2303,6 +2371,7 @@ img {
   border-radius: 24px;
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.14);
   backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .nav-button {
@@ -2344,6 +2413,10 @@ textarea:focus-visible {
 }
 
 @media (max-width: 640px) {
+  body {
+    overscroll-behavior-y: none;
+  }
+
   .app-shell {
     min-height: 100dvh;
     padding: 0;
@@ -2366,6 +2439,7 @@ textarea:focus-visible {
 
   .screen-scroll {
     padding-bottom: calc(104px + env(safe-area-inset-bottom));
+    scroll-padding-bottom: 110px;
   }
 
   .bottom-nav {
@@ -2379,6 +2453,16 @@ textarea:focus-visible {
 
   .policy-modal {
     max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  button,
+  input,
+  textarea {
+    font-size: 16px;
+  }
+
+  .sticky-actions {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

@@ -171,6 +171,7 @@ test("README reflects the current beta backend and share tracking state", async 
 });
 
 test("mobile app harness and blue brand theme are configured", async () => {
+  const androidWorkflow = await readFile(new URL("../.github/workflows/android.yml", import.meta.url), "utf8");
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const packageJson = await readFile(new URL("../package.json", import.meta.url), "utf8");
   const capacitor = await readFile(new URL("../capacitor.config.ts", import.meta.url), "utf8");
@@ -195,6 +196,12 @@ test("mobile app harness and blue brand theme are configured", async () => {
   assert.match(readme, /iOS\/Android 앱 하네스/);
   assert.match(readme, /Capacitor/);
   assert.match(readme, /Android `assembleDebug` 빌드에는 로컬 JDK가 필요하다/);
+  assert.match(readme, /GitHub Actions Android Debug 빌드/);
+  assert.match(androidWorkflow, /name: Android Build/);
+  assert.match(androidWorkflow, /java-version: 21/);
+  assert.match(androidWorkflow, /pnpm verify/);
+  assert.match(androidWorkflow, /pnpm cap:sync:android:local/);
+  assert.match(androidWorkflow, /\.\/gradlew assembleDebug/);
   assert.match(readme, /safe-area inset/);
   assert.match(packageJson, /"@capacitor\/core"/);
   assert.match(packageJson, /mobile:sync/);
@@ -217,6 +224,10 @@ test("mobile app harness and blue brand theme are configured", async () => {
   assert.match(iosPlist, /NSLocationWhenInUseUsageDescription/);
   assert.match(iosPlist, /NSPhotoLibraryUsageDescription/);
   assert.match(css, /100dvh/);
+  assert.match(css, /overscroll-behavior-y: none/);
+  assert.match(css, /-webkit-backdrop-filter: blur\(18px\)/);
+  assert.match(css, /font-size: 16px/);
+  assert.match(css, /scroll-padding-bottom: 110px/);
   assert.match(css, /safe-area-inset-bottom/);
 });
 
@@ -232,7 +243,14 @@ test("UGC user blocking is available for app store moderation expectations", asy
     "utf8",
   );
 
-  for (const label of ["이 사용자의 제보 숨기기", "차단한 사용자 목록", "차단 해제"]) {
+  for (const label of [
+    "이 사용자의 제보 숨기기",
+    "신고가 접수되었습니다",
+    "작성자 차단하기",
+    "이 작성자의 제보를 내 화면에서 숨길 수 있어요",
+    "차단한 사용자 목록",
+    "차단 해제",
+  ]) {
     assert.match(source, new RegExp(label));
   }
 
@@ -254,6 +272,8 @@ test("account deletion can be requested inside the app", async () => {
   const page = await readFile(new URL("../src/app/account/delete/page.tsx", import.meta.url), "utf8");
   const form = await readFile(new URL("../src/app/account/delete/AccountDeletionRequestForm.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../src/app/api/account-deletion/route.ts", import.meta.url), "utf8");
+  const adminPage = await readFile(new URL("../src/app/admin/account-deletions/page.tsx", import.meta.url), "utf8");
+  const adminRoute = await readFile(new URL("../src/app/api/admin/account-deletions/route.ts", import.meta.url), "utf8");
   const store = await readFile(new URL("../src/lib/store.ts", import.meta.url), "utf8");
   const migration = await readFile(
     new URL("../supabase/migrations/20260513090000_beta_account_deletion_requests.sql", import.meta.url),
@@ -265,8 +285,44 @@ test("account deletion can be requested inside the app", async () => {
   assert.match(form, /앱 안에서 삭제 요청을 시작/);
   assert.match(route, /request_account_deletion/);
   assert.match(store, /requestAccountDeletion/);
+  assert.match(store, /listAccountDeletionRequests/);
+  assert.match(store, /handleAccountDeletionRequest/);
+  assert.match(adminRoute, /assertAdminTokenHeader/);
+  assert.match(adminRoute, /listAccountDeletionRequests/);
+  assert.match(adminRoute, /handleAccountDeletionRequest/);
+  assert.match(adminPage, /계정 삭제 요청 큐/);
+  assert.match(adminPage, /처리 대기/);
+  assert.match(adminPage, /처리 중/);
+  assert.match(adminPage, /완료/);
+  assert.match(adminPage, /거절/);
   assert.match(migration, /account_deletion_requests/);
   assert.match(migration, /status in \('pending', 'processing', 'completed', 'rejected'\)/);
+});
+
+test("my page shows question lifecycle states and uses a private questions API", async () => {
+  const source = await readFile(new URL("../src/components/silsigan/SilsiganPrototype.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../src/app/api/my-questions/route.ts", import.meta.url), "utf8");
+  const store = await readFile(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+  const mockStore = await readFile(new URL("../src/lib/mock-store.ts", import.meta.url), "utf8");
+  const supabaseStore = await readFile(new URL("../src/lib/supabase-store.ts", import.meta.url), "utf8");
+
+  for (const label of [
+    "내 질문",
+    "답변 대기",
+    "답변 완료",
+    "만료됨",
+    "답변이 오면 내 질문에서 확인할 수 있어요",
+    "답변이 도착하면 이곳에서 바로 확인할 수 있어요",
+  ]) {
+    assert.match(source, new RegExp(label));
+  }
+
+  assert.match(source, /\/api\/my-questions/);
+  assert.match(source, /MyQuestionsList/);
+  assert.match(route, /listMyQuestions/);
+  assert.match(store, /listMyQuestions/);
+  assert.match(mockStore, /questionStatus/);
+  assert.match(supabaseStore, /questionStatus/);
 });
 
 test("first-use consent modal covers terms, privacy, location, and photo policy", async () => {

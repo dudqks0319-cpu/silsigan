@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "./supabase-server.ts";
 import * as supabaseStore from "./supabase-store.ts";
 import type {
   AccountDeletionRequestInput,
+  AccountDeletionActionInput,
   BlockReportAuthorInput,
   CreateQuestionInput,
   CreateReportInput,
@@ -46,6 +47,14 @@ export async function listPublicQuestions(placeId?: string, options: RequestOpti
   return usingSupabaseStore()
     ? supabaseStore.listPublicQuestions(placeId, { request: options.request })
     : mockStore.listPublicQuestions(placeId, { actorId: options.actorId });
+}
+
+export async function listMyQuestions(options: RequestOptions = {}) {
+  if (usingSupabaseStore() && options.request) {
+    return supabaseStore.listMyQuestions({ request: options.request });
+  }
+
+  return mockStore.listMyQuestions({ actorId: options.actorId });
 }
 
 export async function createQuestion(input: CreateQuestionInput, options: RequestOptions = {}) {
@@ -118,6 +127,16 @@ export async function requestAccountDeletion(input: AccountDeletionRequestInput,
   }
 
   return mockStore.requestAccountDeletion(input, { actorId: options.actorId });
+}
+
+export async function listAccountDeletionRequests() {
+  return usingSupabaseStore() ? supabaseStore.listAccountDeletionRequests() : mockStore.listAccountDeletionRequests();
+}
+
+export async function handleAccountDeletionRequest(input: AccountDeletionActionInput) {
+  return usingSupabaseStore()
+    ? supabaseStore.handleAccountDeletionRequest(input)
+    : mockStore.handleAccountDeletionRequest(input);
 }
 
 function resolveStoreMode() {
