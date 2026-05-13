@@ -181,6 +181,14 @@ test("mobile app harness and blue brand theme are configured", async () => {
   const fallback = await readFile(new URL("../public/capacitor/index.html", import.meta.url), "utf8");
   const androidColors = await readFile(new URL("../android/app/src/main/res/values/colors.xml", import.meta.url), "utf8");
   const androidManifest = await readFile(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
+  const androidInstrumentedTest = await readFile(
+    new URL("../android/app/src/androidTest/java/kr/silsigan/app/ExampleInstrumentedTest.java", import.meta.url),
+    "utf8",
+  );
+  const androidUnitTest = await readFile(
+    new URL("../android/app/src/test/java/kr/silsigan/app/ExampleUnitTest.java", import.meta.url),
+    "utf8",
+  );
   const iosPlist = await readFile(new URL("../ios/App/App/Info.plist", import.meta.url), "utf8");
   const css = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
@@ -202,6 +210,10 @@ test("mobile app harness and blue brand theme are configured", async () => {
   assert.match(fallback, /앱 하네스가 준비되었습니다/);
   assert.match(androidColors, /#2563EB/);
   assert.match(androidManifest, /ACCESS_FINE_LOCATION/);
+  assert.match(androidInstrumentedTest, /package kr\.silsigan\.app;/);
+  assert.match(androidInstrumentedTest, /assertEquals\("kr\.silsigan\.app", appContext\.getPackageName\(\)\)/);
+  assert.match(androidUnitTest, /package kr\.silsigan\.app;/);
+  assert.doesNotMatch(androidInstrumentedTest + androidUnitTest, /com\.getcapacitor\.myapp|com\.getcapacitor\.app/);
   assert.match(iosPlist, /NSLocationWhenInUseUsageDescription/);
   assert.match(iosPlist, /NSPhotoLibraryUsageDescription/);
   assert.match(css, /100dvh/);
