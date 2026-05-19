@@ -81,8 +81,20 @@ export function NaverMap<TPlace extends MapPlace>({ places, compact = false, onS
     window.__silsiganNaverMapReady = () => setReady(true);
 
     if (existing) {
-      return;
+      const timeout = window.setTimeout(() => {
+        if (!window.naver?.maps) {
+          setFailed(true);
+        }
+      }, 3000);
+
+      return () => window.clearTimeout(timeout);
     }
+
+    const timeout = window.setTimeout(() => {
+      if (!window.naver?.maps) {
+        setFailed(true);
+      }
+    }, 3000);
 
     const script = document.createElement("script");
     script.id = "naver-map-sdk";
@@ -92,6 +104,8 @@ export function NaverMap<TPlace extends MapPlace>({ places, compact = false, onS
     )}&callback=__silsiganNaverMapReady`;
     script.onerror = () => setFailed(true);
     document.head.appendChild(script);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
