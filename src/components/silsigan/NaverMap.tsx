@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Place } from "./types";
 
-type NaverMapProps = {
-  places: Place[];
+type MapPlace = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  status: string;
+  crowdLevel: "quiet" | "normal" | "busy" | "packed";
+  line: string;
+  parking: string;
+};
+
+type NaverMapProps<TPlace extends MapPlace> = {
+  places: TPlace[];
   compact?: boolean;
-  onSelectPlace: (place: Place) => void;
+  onSelectPlace: (place: TPlace) => void;
 };
 
 type NaverMapsNamespace = {
@@ -51,7 +61,7 @@ declare global {
 
 const naverMapClientId = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
 
-export function NaverMap({ places, compact = false, onSelectPlace }: NaverMapProps) {
+export function NaverMap<TPlace extends MapPlace>({ places, compact = false, onSelectPlace }: NaverMapProps<TPlace>) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -133,7 +143,7 @@ export function NaverMap({ places, compact = false, onSelectPlace }: NaverMapPro
   return <div className="naver-map" ref={mapRef} role="img" aria-label="네이버 지도 기반 주변 현장" />;
 }
 
-function getMapCenter(places: Place[]) {
+function getMapCenter(places: MapPlace[]) {
   if (places.length === 0) {
     return { latitude: 35.5486, longitude: 129.3005 };
   }
@@ -144,7 +154,7 @@ function getMapCenter(places: Place[]) {
   };
 }
 
-function markerLabelForPlace(place: Place) {
+function markerLabelForPlace(place: MapPlace) {
   if (place.parking === "만차") {
     return "주차 만차";
   }
