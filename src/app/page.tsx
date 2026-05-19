@@ -1,5 +1,5 @@
-import SilsiganPrototype from "@/components/silsigan/SilsiganPrototype";
+import SilsiganRedesign from "@/components/silsigan/SilsiganRedesign";
 
 export default function HomePage() {
-  return <SilsiganPrototype />;
+  return <SilsiganRedesign />;
 }
