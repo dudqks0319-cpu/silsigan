@@ -140,6 +140,10 @@ export async function handleAccountDeletionRequest(input: AccountDeletionActionI
 }
 
 function resolveStoreMode() {
+  if (isDemoMockStoreEnabled()) {
+    return "mock";
+  }
+
   if (isSupabaseConfigured()) {
     return "supabase";
   }
@@ -165,4 +169,8 @@ function isLocalMockStoreAllowed() {
   }
 
   return process.env.NEXT_PUBLIC_USE_MOCK_STORE !== "false";
+}
+
+function isDemoMockStoreEnabled() {
+  return process.env.SILSIGAN_DEMO_MODE === "true";
 }

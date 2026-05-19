@@ -148,6 +148,7 @@ test("production and preview environments cannot silently fall back to mock stor
   const previousNodeEnv = process.env.NODE_ENV;
   const previousVercelEnv = process.env.VERCEL_ENV;
   const previousMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_STORE;
+  const previousDemoMode = process.env.SILSIGAN_DEMO_MODE;
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const previousAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const previousService = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -175,10 +176,16 @@ test("production and preview environments cannot silently fall back to mock stor
 
     delete process.env.VERCEL_ENV;
     assert.equal(store.usingSupabaseStore(), false);
+
+    process.env.SILSIGAN_DEMO_MODE = "true";
+    setEnv("NODE_ENV", "production");
+    setEnv("VERCEL_ENV", "production");
+    assert.equal(store.usingSupabaseStore(), false);
   } finally {
     restoreEnv("NODE_ENV", previousNodeEnv);
     restoreEnv("VERCEL_ENV", previousVercelEnv);
     restoreEnv("NEXT_PUBLIC_USE_MOCK_STORE", previousMockFlag);
+    restoreEnv("SILSIGAN_DEMO_MODE", previousDemoMode);
     restoreEnv("NEXT_PUBLIC_SUPABASE_URL", previousUrl);
     restoreEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", previousAnon);
     restoreEnv("SUPABASE_SERVICE_ROLE_KEY", previousService);
